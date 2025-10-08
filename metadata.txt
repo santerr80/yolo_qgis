@@ -12,8 +12,8 @@ email=santerr80@gmail.com
 
 about=Plugin for YOLO-Powered Raster Map Analysis This plugin empowers users to leverage the speed and accuracy of YOLO (You Only Look Once) models for advanced analysis of raster map data. It provides an integrated suite of tools to train, detect, and segment various objects of interest directly within your geospatial workflow. Purpose: The primary goal of this plugin is to automate and streamline the process of identifying and extracting specific features from raster maps, such as satellite imagery, aerial photographs, and other gridded geospatial datasets. By harnessing the capabilities of state-of-the-art YOLO models, this tool is designed for a wide range of applications including: Environmental Monitoring: Automatically identify and map features like buildings, roads, water bodies, and vegetation cover to track changes over time. Urban Planning: Analyze urban landscapes by detecting and segmenting individual buildings, vehicles, and infrastructure for traffic management and development planning. Agriculture: Monitor crop health, identify different crop types, and detect areas of stress or disease by analyzing aerial or satellite farm imagery. Disaster Response: Quickly assess damage after natural disasters by detecting and mapping affected areas, damaged infrastructure, and debris. Key Features: Object Detection: Rapidly locate and draw bounding boxes around specific objects within a raster map. Instance Segmentation: Go beyond simple detection to precisely outline the exact shape and boundaries of each individual object instance. This is crucial for applications requiring detailed spatial understanding. Custom Model Training: Users can train their own YOLO models on custom datasets to detect and segment niche objects specific to their needs. Pre-trained Models: The plugin comes with pre-trained models on common datasets, allowing users to get started with detection and segmentation tasks immediately. Seamless Integration: Designed to work within existing GIS software, the plugin allows for a smooth workflow without the need to switch between different applications.
 
-tracker=http://bugs
-repository=http://repo
+tracker=https://github.com/santerr80/yolo_qgis/issues
+repository=https://github.com/santerr80/yolo_qgis.git
 # End of mandatory metadata
 
 # Recommended items:
@@ -23,9 +23,9 @@ hasProcessingProvider=no
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=python, Yolo, raster, detection, segmentation, machine learning
+tags=python, yolo, raster, detection, segmentation, machine learning
 
-homepage=http://homepage
+homepage=https://github.com/santerr80/yolo_qgis
 category=Plugins
 icon=icon.png
 # experimental flag
@@ -40,7 +40,7 @@ deprecated=False
 # plugin_dependencies=
 
 Category of the plugin: Raster, Vector, Database or Web
-# category=
+# category=Raster
 
 # If the plugin can run on QGIS Server.
 server=False
