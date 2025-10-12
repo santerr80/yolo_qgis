@@ -5,7 +5,7 @@ import json
 import random
 from datetime import datetime, timezone
 
-from qgis.core import QgsVectorLayer, QgsFeatureRequest
+from qgis.core import QgsVectorLayer, QgsFeatureRequest, QgsWkbTypes
 
 def format_yolo_dataset(
     intersected_layer: QgsVectorLayer,
@@ -22,21 +22,11 @@ def format_yolo_dataset(
 ):
     """
     Создает файл data.ndjson и структуру данных для YOLOv8.
-
-    :param intersected_layer: Слой с объектами, пересеченными с сеткой. Должен содержать поле 'ovrly_id'.
-    :param grid_layer: Слой сетки, используемый для итерации по тайлам.
-    :param class_field: Имя поля с названиями классов в intersected_layer.
-    :param output_dir: Корневая папка для датасета.
-    :param image_format: Формат изображений (png, jpg).
-    :param image_width: Ширина изображений в пикселях.
-    :param image_height: Высота изображений в пикселях.
-    :param splits: Словарь с разбивкой, например {'train': 80, 'val': 10, 'test': 10}.
-    :param metadata: Словарь с метаданными для заголовка ndjson.
-    :param delete_void: Если True, тайлы без объектов не будут включены в датасет.
-    :param progress_reporter: Экземпляр ProgressReporter для обновления ProgressBar.
-    :returns: Кортеж (bool, str). (True, None) при успехе, (False, сообщение_об_ошибке) при неудаче.
+    Поддерживает задачи 'detect' (рамки) и 'segment' (полигоны).
     """
     try:
+        task_type = metadata.get('task', 'detect').lower() # Получаем тип задачи из метаданных
+
         # --- 1. Подготовка структуры и путей ---
         images_root_dir = os.path.join(output_dir, 'images')
         ndjson_path = os.path.join(output_dir, 'data.ndjson')
@@ -44,7 +34,7 @@ def format_yolo_dataset(
             os.makedirs(os.path.join(images_root_dir, split_name), exist_ok=True)
 
         # --- 2. Сбор классов и создание заголовка NDJSON ---
-        print("Сбор уникальных классов и создание data.ndjson...")
+        print(f"Сбор уникальных классов для задачи '{task_type}'...")
         if intersected_layer.fields().indexFromName(class_field) == -1:
             return False, f"Поле класса '{class_field}' не найдено в слое пересечений."
         
@@ -56,7 +46,7 @@ def format_yolo_dataset(
         
         with open(ndjson_path, 'w', encoding='utf-8') as f:
             dataset_meta = {
-                "type": "dataset", "task": "detect",
+                "type": "dataset", "task": task_type, # <--- ИСПОЛЬЗУЕМ ТИП ЗАДАЧИ
                 "name": metadata.get('name', 'QGIS Dataset'),
                 "description": metadata.get('desc', ''),
                 "url": metadata.get('url', ''),
@@ -71,79 +61,94 @@ def format_yolo_dataset(
         
         # --- 4. Основной цикл по тайлам сетки ---
         total_tiles = grid_layer.featureCount()
-        overlay_id_field = 'ovrly_id' # Поле, добавляемое алгоритмом Intersection
-        if grid_layer.fields().indexFromName('id') != -1:
-            overlay_id_field = 'ovrly_id'
-        elif grid_layer.fields().indexFromName('fid') != -1:
-            overlay_id_field = 'ovrly_fid'
-        else: # Пробуем найти поле по префиксу, если ID не стандартный
-            prefix = 'ovrly_'
-            original_id = [f.name() for f in grid_layer.fields() if f.name() in ['id', 'fid', 'ID']]
-            if original_id:
-                overlay_id_field = prefix + original_id[0]
-            else:
-                 return False, "Не удалось найти поле ID ('id' или 'fid') в слое сетки для связи со слоем пересечений."
+        prefix = 'ovrly_'
+        id_field_names = [f.name() for f in grid_layer.fields() if f.name().lower() in ['id', 'fid']]
+        if not id_field_names:
+            return False, "Не удалось найти поле ID ('id' или 'fid') в слое сетки."
+        overlay_id_field = prefix + id_field_names[0]
 
         for i, tile_feature in enumerate(grid_layer.getFeatures()):
-            if progress_reporter and progress_reporter.is_canceled():
-                return False, "Операция отменена."
-            if progress_reporter:
-                progress_reporter.set_progress(i + 1, total_tiles)
+            if progress_reporter and progress_reporter.is_canceled(): return False, "Операция отменена."
+            if progress_reporter: progress_reporter.set_progress(i + 1, total_tiles)
 
             tile_id = tile_feature.id()
             tile_extent = tile_feature.geometry().boundingBox()
+            img_name = f"tile_{tile_id}.{image_format.lower()}"
             
-            # Ищем все объекты, принадлежащие этому тайлу
             request = QgsFeatureRequest().setFilterExpression(f'"{overlay_id_field}" = {tile_id}')
             features_in_tile = list(intersected_layer.getFeatures(request))
             
-            # Пропускаем пустые тайлы, если включена опция
             if not features_in_tile and delete_void:
+                image_to_delete_path = os.path.join(images_root_dir, img_name)
+                if os.path.exists(image_to_delete_path):
+                    try:
+                        os.remove(image_to_delete_path)
+                        print(f"Удален пустой тайл: {image_to_delete_path}")
+                    except OSError as e:
+                        print(f"Ошибка при удалении пустого тайла {image_to_delete_path}: {e}")
                 continue
 
-            # Определяем, в какую выборку попадет тайл
             split = random.choices(split_names, weights=split_weights, k=1)[0]
-            
-            # Формируем путь к изображению, которое УЖЕ было создано экспортером
-            img_name = f"tile_{tile_id}.{image_format.lower()}"
             relative_img_path = os.path.join('images', split, img_name).replace('\\', '/')
-            
-            # Перемещаем файл из 'images' в нужную подпапку (train/val/test)
             source_path = os.path.join(images_root_dir, img_name)
             dest_path = os.path.join(output_dir, relative_img_path)
             if os.path.exists(source_path):
                 os.rename(source_path, dest_path)
-            else:
-                print(f"Предупреждение: Исходный файл не найден: {source_path}")
+            
+            annotations = {}
+            # --- ИЗМЕНЕНИЕ: ЛОГИКА В ЗАВИСИМОСТИ ОТ ТИПА ЗАДАЧИ ---
+            if task_type == 'detect':
+                boxes = []
+                for feat in features_in_tile:
+                    class_id = class_map.get(feat[class_field])
+                    if class_id is None: continue
+                    bbox = feat.geometry().boundingBox()
+                    box_center_x = (bbox.center().x() - tile_extent.xMinimum()) / tile_extent.width()
+                    box_center_y = (tile_extent.yMaximum() - bbox.center().y()) / tile_extent.height()
+                    box_width = bbox.width() / tile_extent.width()
+                    box_height = bbox.height() / tile_extent.height()
+                    boxes.append([
+                        class_id, max(0.0, min(1.0, box_center_x)), max(0.0, min(1.0, box_center_y)),
+                        max(0.0, min(1.0, box_width)), max(0.0, min(1.0, box_height))
+                    ])
+                if boxes: annotations['boxes'] = boxes
 
-            # Формирование аннотаций
-            boxes = []
-            for feat_in_tile in features_in_tile:
-                class_name = feat_in_tile[class_field]
-                if class_name not in class_map: continue
-                
-                class_id = class_map[class_name]
-                bbox = feat_in_tile.geometry().boundingBox()
+            elif task_type == 'segment':
+                segments = []
+                for feat in features_in_tile:
+                    class_id = class_map.get(feat[class_field])
+                    if class_id is None: continue
+                    
+                    geom = feat.geometry()
+                    # Проверяем, что это полигональная геометрия
+                    if geom.wkbType() not in [QgsWkbTypes.Polygon, QgsWkbTypes.MultiPolygon]:
+                        continue
 
-                # Конвертация в YOLO-формат (0-1)
-                box_center_x = (bbox.center().x() - tile_extent.xMinimum()) / tile_extent.width()
-                box_center_y = (tile_extent.yMaximum() - bbox.center().y()) / tile_extent.height()
-                box_width = bbox.width() / tile_extent.width()
-                box_height = bbox.height() / tile_extent.height()
-                
-                boxes.append([
-                    class_id,
-                    max(0.0, min(1.0, box_center_x)), max(0.0, min(1.0, box_center_y)),
-                    max(0.0, min(1.0, box_width)), max(0.0, min(1.0, box_height))
-                ])
+                    # Обрабатываем мультиполигоны как набор отдельных полигонов
+                    polygons = geom.asMultiPolygon() if geom.isMultipart() else [geom.asPolygon()]
+                    
+                    for poly in polygons:
+                        # Берем только внешнее кольцо, игнорируя дырки
+                        exterior_ring = poly[0]
+                        normalized_points = []
+                        for point in exterior_ring:
+                            norm_x = (point.x() - tile_extent.xMinimum()) / tile_extent.width()
+                            norm_y = (tile_extent.yMaximum() - point.y()) / tile_extent.height()
+                            normalized_points.extend([max(0.0, min(1.0, norm_x)), max(0.0, min(1.0, norm_y))])
+                        
+                        if normalized_points:
+                            segments.append([class_id, normalized_points])
+                if segments: annotations['segments'] = segments
+            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-            # Запись в NDJSON
-            image_record = {
-                "type": "image", "file": relative_img_path, "width": image_width, "height": image_height,
-                "split": split, "annotations": {"boxes": boxes}
-            }
-            with open(ndjson_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(image_record) + '\n')
+            # Записываем в NDJSON, только если есть аннотации (или если не удаляем пустые)
+            if annotations or not delete_void:
+                image_record = {
+                    "type": "image", "file": relative_img_path, "width": image_width, "height": image_height,
+                    "split": split, "annotations": annotations
+                }
+                with open(ndjson_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(image_record) + '\n')
                 
         return True, None
     except Exception as e:

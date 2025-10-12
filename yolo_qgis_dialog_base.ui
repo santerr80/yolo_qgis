@@ -260,13 +260,8 @@
           <string>256</string>
          </property>
          <property name="currentIndex">
-          <number>2</number>
+          <number>1</number>
          </property>
-         <item>
-          <property name="text">
-           <string>64</string>
-          </property>
-         </item>
          <item>
           <property name="text">
            <string>128</string>
@@ -306,14 +301,14 @@
        <item row="7" column="1">
         <widget class="QLineEdit" name="lineEdit_HorizontalOverlay">
          <property name="text">
-          <string>0</string>
+          <string/>
          </property>
         </widget>
        </item>
        <item row="7" column="0">
         <widget class="QLineEdit" name="lineEdit_VerticalOverlay">
          <property name="text">
-          <string>0</string>
+          <string/>
          </property>
         </widget>
        </item>
@@ -327,14 +322,14 @@
        <item row="5" column="0">
         <widget class="QLineEdit" name="lineEdit_WidthMeter">
          <property name="text">
-          <string>98.4250</string>
+          <string/>
          </property>
         </widget>
        </item>
        <item row="5" column="1">
         <widget class="QLineEdit" name="lineEdit_HeigthMeter">
          <property name="text">
-          <string>98.4250</string>
+          <string/>
          </property>
         </widget>
        </item>
@@ -382,9 +377,6 @@
        </item>
        <item>
         <widget class="QgsFileWidget" name="mQgsFileWidget">
-         <property name="defaultRoot">
-          <string>C:\TEMP</string>
-         </property>
          <property name="storageMode">
           <enum>QgsFileWidget::GetDirectory</enum>
          </property>

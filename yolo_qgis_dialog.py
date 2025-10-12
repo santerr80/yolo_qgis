@@ -113,6 +113,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         finally:
             self.spinBox_Train.blockSignals(False); self.spinBox_Val.blockSignals(False); self.spinBox_Test.blockSignals(False)
 
+# В файле yolo_qgis_dialog.py
+
+    # ... (весь остальной код класса без изменений) ...
+
     def run_dataset_creation(self):
         """Основная функция, запускающая весь процесс."""
         print("--- Запуск процесса ---")
@@ -186,11 +190,16 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             'val': self.spinBox_Val.value(),
             'test': self.spinBox_Test.value()
         }
+        
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ: ДОБАВЛЯЕМ 'task' В МЕТАДАННЫЕ ---
         metadata = {
+            'task': self.comboBox_TaskDataset.currentText(), # <--- Считываем тип задачи из GUI
             'name': self.lineEdit_NameDataset.text(),
             'desc': self.lineEdit_DescriptionDataset.text(),
             'url': self.lineEdit_UrlDataset.text()
         }
+        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
         delete_void = self.voidImages.isChecked()
         progress_reporter_format = ProgressReporter(self.progressBar, start_percentage=75, end_percentage=100)
         
@@ -200,6 +209,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             image_width=img_width_px, image_height=img_height_px,
             splits=splits, metadata=metadata, delete_void=delete_void,
             progress_reporter=progress_reporter_format)
+            
         if not success:
             QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
         print("Файл data.ndjson успешно создан.")
