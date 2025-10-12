@@ -2,7 +2,7 @@
 """
 /***************************************************************************
  YoloQgisDialog
- ... (you header here) ...
+ This file was automatically generated with qtdesigner.py
  ***************************************************************************/
 """
 
@@ -65,13 +65,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             dpi = int(self.comboBox_Dpi.currentText())
             if is_pixel_source:
                 w_px, h_px = int(self.lineEdit_WidthPixel.text()), int(self.lineEdit_HeigthPixel.text())
-                w_m, h_m = (w_px / dpi) * 0.0254, (h_px / dpi) * 0.0254
+                w_m, h_m = (w_px / dpi) *39.37, (h_px / dpi) *39.37
                 self.lineEdit_WidthMeter.blockSignals(True); self.lineEdit_HeigthMeter.blockSignals(True)
                 self.lineEdit_WidthMeter.setText(f"{w_m:.4f}"); self.lineEdit_HeigthMeter.setText(f"{h_m:.4f}")
                 self.lineEdit_WidthMeter.blockSignals(False); self.lineEdit_HeigthMeter.blockSignals(False)
             elif is_meter_source:
                 w_m, h_m = float(self.lineEdit_WidthMeter.text()), float(self.lineEdit_HeigthMeter.text())
-                w_px, h_px = round((w_m / 0.0254) * dpi), round((h_m / 0.0254) * dpi)
+                w_px, h_px = round((w_m /39.37) * dpi), round((h_m /39.37) * dpi)
                 self.lineEdit_WidthPixel.blockSignals(True); self.lineEdit_HeigthPixel.blockSignals(True)
                 self.lineEdit_WidthPixel.setText(str(w_px)); self.lineEdit_HeigthPixel.setText(str(h_px))
                 self.lineEdit_WidthPixel.blockSignals(False); self.lineEdit_HeigthPixel.blockSignals(False)
