@@ -260,8 +260,13 @@
           <string>256</string>
          </property>
          <property name="currentIndex">
-          <number>1</number>
+          <number>2</number>
          </property>
+         <item>
+          <property name="text">
+           <string>64</string>
+          </property>
+         </item>
          <item>
           <property name="text">
            <string>128</string>
@@ -301,14 +306,14 @@
        <item row="7" column="1">
         <widget class="QLineEdit" name="lineEdit_HorizontalOverlay">
          <property name="text">
-          <string/>
+          <string>0</string>
          </property>
         </widget>
        </item>
        <item row="7" column="0">
         <widget class="QLineEdit" name="lineEdit_VerticalOverlay">
          <property name="text">
-          <string/>
+          <string>0</string>
          </property>
         </widget>
        </item>
@@ -322,14 +327,14 @@
        <item row="5" column="0">
         <widget class="QLineEdit" name="lineEdit_WidthMeter">
          <property name="text">
-          <string/>
+          <string>98.4250</string>
          </property>
         </widget>
        </item>
        <item row="5" column="1">
         <widget class="QLineEdit" name="lineEdit_HeigthMeter">
          <property name="text">
-          <string/>
+          <string>98.4250</string>
          </property>
         </widget>
        </item>
@@ -377,6 +382,9 @@
        </item>
        <item>
         <widget class="QgsFileWidget" name="mQgsFileWidget">
+         <property name="defaultRoot">
+          <string>C:\TEMP</string>
+         </property>
          <property name="storageMode">
           <enum>QgsFileWidget::GetDirectory</enum>
          </property>
@@ -425,7 +433,7 @@
        <x>270</x>
        <y>270</y>
        <width>231</width>
-       <height>91</height>
+       <height>141</height>
       </rect>
      </property>
      <property name="title">
@@ -516,6 +524,19 @@
        <string>remove empty images</string>
       </property>
      </widget>
+     <widget class="QCheckBox" name="checkBox_YoloFormat">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>100</y>
+        <width>101</width>
+        <height>17</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Native format</string>
+      </property>
+     </widget>
     </widget>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="geometry">
@@ -548,6 +569,69 @@
     <attribute name="title">
      <string>Train</string>
     </attribute>
+    <widget class="QToolBox" name="toolBox">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>2</y>
+       <width>491</width>
+       <height>471</height>
+      </rect>
+     </property>
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="trainSettings">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>491</width>
+        <height>390</height>
+       </rect>
+      </property>
+      <property name="focusPolicy">
+       <enum>Qt::NoFocus</enum>
+      </property>
+      <property name="toolTipDuration">
+       <number>-1</number>
+      </property>
+      <attribute name="label">
+       <string>Train Settings</string>
+      </attribute>
+     </widget>
+     <widget class="QWidget" name="augmentationSettings">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>491</width>
+        <height>390</height>
+       </rect>
+      </property>
+      <attribute name="label">
+       <string>Augmentation Settings and Hyperparameters</string>
+      </attribute>
+     </widget>
+     <widget class="QWidget" name="validationSettings">
+      <attribute name="label">
+       <string>Arguments for YOLO Model Validation</string>
+      </attribute>
+     </widget>
+    </widget>
+    <widget class="QDialogButtonBox" name="buttonBox_2">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>520</y>
+       <width>156</width>
+       <height>23</height>
+      </rect>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="Detect">
     <attribute name="title">
