@@ -17,7 +17,8 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 from .grid_creator import create_grid_layer
 from .intersection import perform_intersection
 from .map_exporter import export_views
-from .dataset_formatter import format_yolo_dataset # <--- ДОБАВЛЕН НОВЫЙ ИМПОРТ
+from .dataset_formatter import format_yolo_dataset 
+from .dataset_formatter_yolo import save_yolo_native_dataset # <--- ДОБАВЛЕН НОВЫЙ ИМПОРТ
 from .processing_utils import ProgressReporter
 
 
@@ -65,13 +66,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             dpi = int(self.comboBox_Dpi.currentText())
             if is_pixel_source:
                 w_px, h_px = int(self.lineEdit_WidthPixel.text()), int(self.lineEdit_HeigthPixel.text())
-                w_m, h_m = (w_px / dpi) *39.37, (h_px / dpi) *39.37
+                w_m, h_m = (w_px / dpi) * 39.37, (h_px / dpi) * 39.37
                 self.lineEdit_WidthMeter.blockSignals(True); self.lineEdit_HeigthMeter.blockSignals(True)
                 self.lineEdit_WidthMeter.setText(f"{w_m:.4f}"); self.lineEdit_HeigthMeter.setText(f"{h_m:.4f}")
                 self.lineEdit_WidthMeter.blockSignals(False); self.lineEdit_HeigthMeter.blockSignals(False)
             elif is_meter_source:
                 w_m, h_m = float(self.lineEdit_WidthMeter.text()), float(self.lineEdit_HeigthMeter.text())
-                w_px, h_px = round((w_m /39.37) * dpi), round((h_m /39.37) * dpi)
+                w_px, h_px = round((w_m / 39.37) * dpi), round((h_m / 39.37) * dpi)
                 self.lineEdit_WidthPixel.blockSignals(True); self.lineEdit_HeigthPixel.blockSignals(True)
                 self.lineEdit_WidthPixel.setText(str(w_px)); self.lineEdit_HeigthPixel.setText(str(h_px))
                 self.lineEdit_WidthPixel.blockSignals(False); self.lineEdit_HeigthPixel.blockSignals(False)
@@ -113,10 +114,6 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         finally:
             self.spinBox_Train.blockSignals(False); self.spinBox_Val.blockSignals(False); self.spinBox_Test.blockSignals(False)
 
-# В файле yolo_qgis_dialog.py
-
-    # ... (весь остальной код класса без изменений) ...
-
     def run_dataset_creation(self):
         """Основная функция, запускающая весь процесс."""
         print("--- Запуск процесса ---")
@@ -138,6 +135,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             img_height_px = int(self.lineEdit_HeigthPixel.text())
             img_dpi = int(self.comboBox_Dpi.currentText())
             img_format = self.comboBoxFileFormat.currentText()
+            
+            # --- ИЗМЕНЕНИЕ: Считываем состояние чекбокса для выбора формата ---
+            # Предполагается, что в UI-файле добавлен QCheckBox с именем 'checkBox_YoloFormat'
+            save_in_yolo_format = self.checkBox_YoloFormat.isChecked()
             
             if any(x <= 0 for x in [img_width_m, img_height_m, img_width_px, img_height_px]):
                 raise ValueError("Все размеры должны быть больше нуля.")
@@ -184,35 +185,43 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         print("Экспорт изображений завершен.")
 
         # --- ШАГ 4: Формирование датасета (75% -> 100%) ---
-        print("\n4. Формирование файла аннотаций data.ndjson...")
         splits = {
             'train': self.spinBox_Train.value(),
             'val': self.spinBox_Val.value(),
             'test': self.spinBox_Test.value()
         }
         
-        # --- ИЗМЕНЕНИЕ ЗДЕСЬ: ДОБАВЛЯЕМ 'task' В МЕТАДАННЫЕ ---
         metadata = {
-            'task': self.comboBox_TaskDataset.currentText(), # <--- Считываем тип задачи из GUI
+            'task': self.comboBox_TaskDataset.currentText(),
             'name': self.lineEdit_NameDataset.text(),
             'desc': self.lineEdit_DescriptionDataset.text(),
             'url': self.lineEdit_UrlDataset.text()
         }
-        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
         delete_void = self.voidImages.isChecked()
         progress_reporter_format = ProgressReporter(self.progressBar, start_percentage=75, end_percentage=100)
         
-        success, error_msg = format_yolo_dataset(
-            intersected_layer=intersected_layer, grid_layer=grid_layer,
-            class_field=classes_field, output_dir=output_dir, image_format=img_format,
-            image_width=img_width_px, image_height=img_height_px,
-            splits=splits, metadata=metadata, delete_void=delete_void,
-            progress_reporter=progress_reporter_format)
+        # --- ИЗМЕНЕНИЕ: ВЫБОР ФОРМАТА ДЛЯ СОХРАНЕНИЯ ---
+        if save_in_yolo_format:
+            print("\n4. Формирование датасета в нативном формате YOLO...")
+            success, error_msg = save_yolo_native_dataset(
+                intersected_layer=intersected_layer, grid_layer=grid_layer,
+                class_field=classes_field, output_dir=output_dir, image_format=img_format,
+                splits=splits, metadata=metadata, delete_void=delete_void,
+                progress_reporter=progress_reporter_format)
+        else:
+            print("\n4. Формирование файла аннотаций data.ndjson...")
+            success, error_msg = format_yolo_dataset(
+                intersected_layer=intersected_layer, grid_layer=grid_layer,
+                class_field=classes_field, output_dir=output_dir, image_format=img_format,
+                image_width=img_width_px, image_height=img_height_px,
+                splits=splits, metadata=metadata, delete_void=delete_void,
+                progress_reporter=progress_reporter_format)
+        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
             
         if not success:
             QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
-        print("Файл data.ndjson успешно создан.")
+        print("Формирование датасета завершено.")
         
         self.progressBar.setValue(100)
         print("\n--- Процесс успешно завершен ---")
