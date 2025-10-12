@@ -32,7 +32,7 @@
    <bool>false</bool>
   </property>
   <property name="sizeGripEnabled">
-   <bool>false</bool>
+   <bool>true</bool>
   </property>
   <property name="modal">
    <bool>true</bool>
@@ -260,8 +260,13 @@
           <string>256</string>
          </property>
          <property name="currentIndex">
-          <number>1</number>
+          <number>2</number>
          </property>
+         <item>
+          <property name="text">
+           <string>64</string>
+          </property>
+         </item>
          <item>
           <property name="text">
            <string>128</string>
@@ -284,31 +289,10 @@
          </item>
         </widget>
        </item>
-       <item row="4" column="0">
-        <widget class="QLabel" name="label_9">
-         <property name="text">
-          <string>Heigth m.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0">
-        <widget class="QLineEdit" name="lineEdit_HeigthMeter">
-         <property name="text">
-          <string/>
-         </property>
-        </widget>
-       </item>
        <item row="6" column="0">
         <widget class="QLabel" name="label_12">
          <property name="text">
           <string>V. overlay m.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="1">
-        <widget class="QLabel" name="label_10">
-         <property name="text">
-          <string>Width m.</string>
          </property>
         </widget>
        </item>
@@ -322,21 +306,42 @@
        <item row="7" column="1">
         <widget class="QLineEdit" name="lineEdit_HorizontalOverlay">
          <property name="text">
-          <string/>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="1">
-        <widget class="QLineEdit" name="lineEdit_WidthMeter">
-         <property name="text">
-          <string/>
+          <string>0</string>
          </property>
         </widget>
        </item>
        <item row="7" column="0">
         <widget class="QLineEdit" name="lineEdit_VerticalOverlay">
          <property name="text">
-          <string/>
+          <string>0</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_10">
+         <property name="text">
+          <string>Width m.</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QLineEdit" name="lineEdit_WidthMeter">
+         <property name="text">
+          <string>98.4250</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="1">
+        <widget class="QLineEdit" name="lineEdit_HeigthMeter">
+         <property name="text">
+          <string>98.4250</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QLabel" name="label_9">
+         <property name="text">
+          <string>Heigth m.</string>
          </property>
         </widget>
        </item>
@@ -489,7 +494,7 @@
         </widget>
        </item>
        <item row="1" column="2">
-        <widget class="QSpinBox" name="spinBox_3">
+        <widget class="QSpinBox" name="spinBox_Test">
          <property name="minimum">
           <number>0</number>
          </property>
@@ -508,12 +513,12 @@
        <rect>
         <x>10</x>
         <y>70</y>
-        <width>111</width>
+        <width>131</width>
         <height>17</height>
        </rect>
       </property>
       <property name="text">
-       <string>Delete void images</string>
+       <string>remove empty images</string>
       </property>
      </widget>
     </widget>
