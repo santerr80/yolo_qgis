@@ -17,7 +17,8 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 from .grid_creator import create_grid_layer
 from .intersection import perform_intersection
 from .map_exporter import export_views
-from .processing_utils import ProgressReporter # <--- ДОБАВЛЕН ИМПОРТ
+from .dataset_formatter import format_yolo_dataset # <--- ДОБАВЛЕН НОВЫЙ ИМПОРТ
+from .processing_utils import ProgressReporter
 
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -25,6 +26,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 
 class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
+    # ... (весь код __init__, _setup_connections, _update_size_values, update_split_values остается без изменений) ...
     def __init__(self, parent=None):
         """Конструктор."""
         super(YoloQgisDialog, self).__init__(parent)
@@ -55,7 +57,6 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def _update_size_values(self):
         """Автоматически пересчитывает размеры в метрах или пикселях."""
-        # ... (код этой функции остается без изменений)
         sender = self.sender()
         if not sender: return
         is_pixel_source = sender in (self.lineEdit_WidthPixel, self.lineEdit_HeigthPixel, self.comboBox_Dpi)
@@ -79,7 +80,6 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def update_split_values(self):
         """Перераспределяет значения Train/Val/Test, чтобы сумма была 100."""
-        # ... (код этой функции остается без изменений)
         sender = self.sender()
         if not sender: return
         self.spinBox_Train.blockSignals(True); self.spinBox_Val.blockSignals(True); self.spinBox_Test.blockSignals(True)
@@ -89,21 +89,29 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if sender == self.spinBox_Train:
                 other_sum = val + test
                 if other_sum == 0: new_val, new_test = remainder, 0
-                else: new_val, new_test = round(remainder * (val / other_sum)), remainder - round(remainder * (val / other_sum))
+                else: 
+                    ratio = val / other_sum
+                    new_val = round(remainder * ratio)
+                    new_test = remainder - new_val
                 self.spinBox_Val.setValue(new_val); self.spinBox_Test.setValue(new_test)
             elif sender == self.spinBox_Val:
                 other_sum = train + test
                 if other_sum == 0: new_train, new_test = remainder, 0
-                else: new_train, new_test = round(remainder * (train / other_sum)), remainder - round(remainder * (train / other_sum))
+                else: 
+                    ratio = train / other_sum
+                    new_train = round(remainder * ratio)
+                    new_test = remainder - new_train
                 self.spinBox_Train.setValue(new_train); self.spinBox_Test.setValue(new_test)
             elif sender == self.spinBox_Test:
                 other_sum = train + val
                 if other_sum == 0: new_train, new_val = remainder, 0
-                else: new_train, new_val = round(remainder * (train / other_sum)), remainder - round(remainder * (train / other_sum))
+                else: 
+                    ratio = train / other_sum
+                    new_train = round(remainder * ratio)
+                    new_val = remainder - new_train
                 self.spinBox_Train.setValue(new_train); self.spinBox_Val.setValue(new_val)
         finally:
             self.spinBox_Train.blockSignals(False); self.spinBox_Val.blockSignals(False); self.spinBox_Test.blockSignals(False)
-
 
     def run_dataset_creation(self):
         """Основная функция, запускающая весь процесс."""
@@ -114,77 +122,89 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         try:
             output_dir = self.mQgsFileWidget.filePath()
             objects_layer = self.mMapLayerComboBoxObjects.currentLayer()
-            if not output_dir or not objects_layer:
-                raise ValueError("Необходимо указать выходную папку и слой объектов.")
+            classes_field = self.mFieldComboBoxObjects.currentField()
+            if not all([output_dir, objects_layer, classes_field]):
+                raise ValueError("Необходимо заполнить все поля в группе 'Setup'.")
             
             img_width_m = float(self.lineEdit_WidthMeter.text())
             img_height_m = float(self.lineEdit_HeigthMeter.text())
             v_overlay_m = float(self.lineEdit_VerticalOverlay.text() or 0.0)
             h_overlay_m = float(self.lineEdit_HorizontalOverlay.text() or 0.0)
-            
             img_width_px = int(self.lineEdit_WidthPixel.text())
             img_height_px = int(self.lineEdit_HeigthPixel.text())
             img_dpi = int(self.comboBox_Dpi.currentText())
             img_format = self.comboBoxFileFormat.currentText()
             
-            if img_width_m <= 0 or img_height_m <= 0 or img_width_px <= 0 or img_height_px <= 0:
+            if any(x <= 0 for x in [img_width_m, img_height_m, img_width_px, img_height_px]):
                 raise ValueError("Все размеры должны быть больше нуля.")
         except (ValueError, TypeError) as e:
             QtWidgets.QMessageBox.warning(self, "Ошибка ввода", f"Проверьте корректность входных данных:\n{e}")
             return
         
-        # --- ШАГ 1: Создание сетки (0% -> 20%) ---
+        # --- ШАГ 1: Создание сетки (0% -> 15%) ---
         print("\n1. Создание сетки...")
         self.progressBar.setValue(5)
         grid_layer, error_msg = create_grid_layer(
             source_layer=objects_layer, h_spacing=img_width_m, v_spacing=img_height_m,
             h_overlay=h_overlay_m, v_overlay=v_overlay_m)
-        
         if error_msg:
-            QtWidgets.QMessageBox.critical(self, "Ошибка создания сетки", error_msg)
-            self.progressBar.setValue(0); return
+            QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
         grid_layer.setName(f"Сетка для '{objects_layer.name()}'")
         QgsProject.instance().addMapLayer(grid_layer)
-        self.progressBar.setValue(20)
-        print("Сетка успешно создана.")
+        self.progressBar.setValue(15)
+        print("Сетка создана.")
 
-        # --- ШАГ 2: Выполнение пересечения (20% -> 30%) ---
-        print("\n2. Выполнение пересечения объектов с сеткой...")
-        self.progressBar.setValue(25)
+        # --- ШАГ 2: Выполнение пересечения (15% -> 25%) ---
+        print("\n2. Пересечение объектов с сеткой...")
+        self.progressBar.setValue(20)
         intersected_layer, error_msg = perform_intersection(
             input_layer=objects_layer, overlay_layer=grid_layer)
-
         if error_msg:
-            QtWidgets.QMessageBox.critical(self, "Ошибка пересечения", error_msg)
-            self.progressBar.setValue(0); return
+            QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
         intersected_layer.setName(f"Пересечение для '{objects_layer.name()}'")
         QgsProject.instance().addMapLayer(intersected_layer)
-        self.progressBar.setValue(30)
-        print("Слой пересечения успешно создан.")
+        self.progressBar.setValue(25)
+        print("Слой пересечения создан.")
 
-        # --- ШАГ 3: Экспорт изображений (30% -> 100%) ---
-        print("\n3. Экспорт видов карты...")
+        # --- ШАГ 3: Экспорт изображений (25% -> 75%) ---
+        print("\n3. Экспорт изображений тайлов...")
         images_output_dir = os.path.join(output_dir, 'images')
-        
-        progress_reporter = ProgressReporter(self.progressBar, start_percentage=30, end_percentage=100)
-        
+        progress_reporter_export = ProgressReporter(self.progressBar, start_percentage=25, end_percentage=75)
         success, error_msg = export_views(
-            grid_layer=grid_layer,
-            output_dir=images_output_dir,
-            image_format=img_format,
-            width_px=img_width_px,
-            height_px=img_height_px,
-            dpi=img_dpi,
-            progress_reporter=progress_reporter
-        )
-
+            grid_layer=grid_layer, output_dir=images_output_dir, image_format=img_format,
+            width_px=img_width_px, height_px=img_height_px, dpi=img_dpi,
+            progress_reporter=progress_reporter_export)
         if not success:
-            QtWidgets.QMessageBox.critical(self, "Ошибка экспорта", error_msg)
-            self.progressBar.setValue(0); return
+            QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
+        self.progressBar.setValue(75)
+        print("Экспорт изображений завершен.")
+
+        # --- ШАГ 4: Формирование датасета (75% -> 100%) ---
+        print("\n4. Формирование файла аннотаций data.ndjson...")
+        splits = {
+            'train': self.spinBox_Train.value(),
+            'val': self.spinBox_Val.value(),
+            'test': self.spinBox_Test.value()
+        }
+        metadata = {
+            'name': self.lineEdit_NameDataset.text(),
+            'desc': self.lineEdit_DescriptionDataset.text(),
+            'url': self.lineEdit_UrlDataset.text()
+        }
+        delete_void = self.voidImages.isChecked()
+        progress_reporter_format = ProgressReporter(self.progressBar, start_percentage=75, end_percentage=100)
+        
+        success, error_msg = format_yolo_dataset(
+            intersected_layer=intersected_layer, grid_layer=grid_layer,
+            class_field=classes_field, output_dir=output_dir, image_format=img_format,
+            image_width=img_width_px, image_height=img_height_px,
+            splits=splits, metadata=metadata, delete_void=delete_void,
+            progress_reporter=progress_reporter_format)
+        if not success:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
+        print("Файл data.ndjson успешно создан.")
         
         self.progressBar.setValue(100)
         print("\n--- Процесс успешно завершен ---")
-        QtWidgets.QMessageBox.information(self, "Готово", 
-            f"Все операции успешно завершены!\n"
-            f"Изображения сохранены в:\n{images_output_dir}")
+        QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно создан!\nСохранено в: {output_dir}")
         self.accept()

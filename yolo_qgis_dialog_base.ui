@@ -382,6 +382,9 @@
        </item>
        <item>
         <widget class="QgsFileWidget" name="mQgsFileWidget">
+         <property name="defaultRoot">
+          <string>C:\TEMP</string>
+         </property>
          <property name="storageMode">
           <enum>QgsFileWidget::GetDirectory</enum>
          </property>
