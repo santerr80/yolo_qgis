@@ -9,12 +9,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>510</width>
-    <height>570</height>
+    <width>800</width>
+    <height>700</height>
    </rect>
   </property>
   <property name="sizePolicy">
-   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
     <horstretch>0</horstretch>
     <verstretch>0</verstretch>
    </sizepolicy>
@@ -40,10 +40,10 @@
   <widget class="QTabWidget" name="tabWidget">
    <property name="geometry">
     <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>511</width>
-     <height>571</height>
+     <x>10</x>
+     <y>10</y>
+     <width>780</width>
+     <height>650</height>
     </rect>
    </property>
    <property name="currentIndex">
@@ -53,595 +53,747 @@
     <attribute name="title">
      <string>Dataset</string>
     </attribute>
-    <widget class="QGroupBox" name="MetadataNdjson">
-     <property name="geometry">
-      <rect>
-       <x>270</x>
-       <y>10</y>
-       <width>231</width>
-       <height>251</height>
-      </rect>
+    <layout class="QVBoxLayout" name="mainDatasetLayout">
+     <property name="spacing">
+      <number>10</number>
      </property>
-     <property name="title">
-      <string>Metadata NDJSON</string>
+     <property name="leftMargin">
+      <number>10</number>
      </property>
-     <property name="flat">
-      <bool>false</bool>
+     <property name="topMargin">
+      <number>10</number>
      </property>
-     <property name="checkable">
-      <bool>false</bool>
+     <property name="rightMargin">
+      <number>10</number>
      </property>
-     <widget class="QWidget" name="layoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>20</y>
-        <width>211</width>
-        <height>221</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout_3">
-       <item>
-        <widget class="QLabel" name="label_13">
-         <property name="text">
-          <string>Type</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="lineEdit_TypeDataset">
-         <property name="text">
-          <string>dataset</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_14">
-         <property name="text">
-          <string>Task</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="comboBox_TaskDataset">
-         <item>
-          <property name="text">
-           <string>detect</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>segment</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>classify</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>pose</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>obb</string>
-          </property>
-         </item>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_15">
-         <property name="text">
-          <string>Name</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="lineEdit_NameDataset">
-         <property name="text">
-          <string>My QGIS Dataset</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_16">
-         <property name="text">
-          <string>Description</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="lineEdit_DescriptionDataset">
-         <property name="text">
-          <string>Generated via QGIS plugin Yolo Qgis</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_17">
-         <property name="text">
-          <string>URL</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="lineEdit_UrlDataset">
-         <property name="text">
-          <string>local</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </widget>
-    <widget class="QGroupBox" name="ImageParameters">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>270</y>
-       <width>241</width>
-       <height>211</height>
-      </rect>
+     <property name="bottomMargin">
+      <number>10</number>
      </property>
-     <property name="title">
-      <string>Image Parameters</string>
-     </property>
-     <widget class="QWidget" name="layoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>11</x>
-        <y>21</y>
-        <width>221</width>
-        <height>181</height>
-       </rect>
-      </property>
-      <layout class="QGridLayout" name="gridLayout">
-       <item row="3" column="1">
-        <widget class="QLineEdit" name="lineEdit_HeigthPixel">
-         <property name="text">
-          <string>640</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="0">
-        <widget class="QLabel" name="label_7">
-         <property name="text">
-          <string>Width px.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="0">
-        <widget class="QLineEdit" name="lineEdit_WidthPixel">
-         <property name="text">
-          <string>640</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="0">
-        <widget class="QLabel" name="label_5">
-         <property name="text">
-          <string>Format</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="QLabel" name="label_6">
-         <property name="text">
-          <string>Dpi</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="1">
-        <widget class="QLabel" name="label_8">
-         <property name="text">
-          <string>Heigth px.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QComboBox" name="comboBoxFileFormat">
-         <item>
-          <property name="text">
-           <string>png</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>jpg</string>
-          </property>
-         </item>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="QComboBox" name="comboBox_Dpi">
-         <property name="currentText">
-          <string>256</string>
-         </property>
-         <property name="currentIndex">
-          <number>2</number>
-         </property>
-         <item>
-          <property name="text">
-           <string>64</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>128</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>256</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>512</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>1024</string>
-          </property>
-         </item>
-        </widget>
-       </item>
-       <item row="6" column="0">
-        <widget class="QLabel" name="label_12">
-         <property name="text">
-          <string>V. overlay m.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="6" column="1">
-        <widget class="QLabel" name="label_11">
-         <property name="text">
-          <string>H. overlay m.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="7" column="1">
-        <widget class="QLineEdit" name="lineEdit_HorizontalOverlay">
-         <property name="text">
-          <string>0</string>
-         </property>
-        </widget>
-       </item>
-       <item row="7" column="0">
-        <widget class="QLineEdit" name="lineEdit_VerticalOverlay">
-         <property name="text">
-          <string>0</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="0">
-        <widget class="QLabel" name="label_10">
-         <property name="text">
-          <string>Width m.</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0">
-        <widget class="QLineEdit" name="lineEdit_WidthMeter">
-         <property name="text">
-          <string>98.4250</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="1">
-        <widget class="QLineEdit" name="lineEdit_HeigthMeter">
-         <property name="text">
-          <string>98.4250</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="1">
-        <widget class="QLabel" name="label_9">
-         <property name="text">
-          <string>Heigth m.</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </widget>
-    <widget class="QGroupBox" name="Setup">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>10</y>
-       <width>241</width>
-       <height>251</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>Setup</string>
-     </property>
-     <widget class="QWidget" name="layoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>20</y>
-        <width>221</width>
-        <height>221</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout">
+     <item>
+      <layout class="QHBoxLayout" name="topRowLayout">
        <property name="spacing">
-        <number>6</number>
+        <number>10</number>
        </property>
        <item>
-        <widget class="QLabel" name="label">
-         <property name="text">
-          <string>Output directory</string>
+        <widget class="QGroupBox" name="Setup">
+         <property name="title">
+          <string>Setup</string>
          </property>
+         <property name="toolTip">
+          <string>Configure input data sources and output directory</string>
+         </property>
+         <layout class="QVBoxLayout" name="setupLayout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string>Output directory</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QgsFileWidget" name="mQgsFileWidget">
+            <property name="defaultRoot">
+             <string>C:\TEMP</string>
+            </property>
+            <property name="storageMode">
+             <enum>QgsFileWidget::GetDirectory</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>Raster layer</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboBoxRaster"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_4">
+            <property name="text">
+             <string>Objects Layer</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboBoxObjects"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>Classes field</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QgsFieldComboBox" name="mFieldComboBoxObjects">
+            <property name="currentText">
+             <string/>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
        <item>
-        <widget class="QgsFileWidget" name="mQgsFileWidget">
-         <property name="defaultRoot">
-          <string>C:\TEMP</string>
+        <widget class="QGroupBox" name="MetadataNdjson">
+         <property name="title">
+          <string>Metadata NDJSON</string>
          </property>
-         <property name="storageMode">
-          <enum>QgsFileWidget::GetDirectory</enum>
+         <property name="toolTip">
+          <string>Configure dataset metadata and task type</string>
          </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_2">
-         <property name="text">
-          <string>Raster layer</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QgsMapLayerComboBox" name="mMapLayerComboBoxRaster"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_4">
-         <property name="text">
-          <string>Objects Layer</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QgsMapLayerComboBox" name="mMapLayerComboBoxObjects"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_3">
-         <property name="text">
-          <string>Classes field</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QgsFieldComboBox" name="mFieldComboBoxObjects">
-         <property name="currentText">
-          <string/>
-         </property>
+         <layout class="QVBoxLayout" name="metadataLayout">
+          <item>
+           <widget class="QLabel" name="label_13">
+            <property name="text">
+             <string>Type</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="lineEdit_TypeDataset">
+            <property name="text">
+             <string>dataset</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_14">
+            <property name="text">
+             <string>Task</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboBox_TaskDataset">
+            <item>
+             <property name="text">
+              <string>detect</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>segment</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>classify</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>pose</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>obb</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_15">
+            <property name="text">
+             <string>Name</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="lineEdit_NameDataset">
+            <property name="text">
+             <string>My QGIS Dataset</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_16">
+            <property name="text">
+             <string>Description</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="lineEdit_DescriptionDataset">
+            <property name="text">
+             <string>Generated via QGIS plugin Yolo Qgis</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_17">
+            <property name="text">
+             <string>URL</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="lineEdit_UrlDataset">
+            <property name="text">
+             <string>local</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
       </layout>
-     </widget>
-    </widget>
-    <widget class="QGroupBox" name="DatasetParameters">
-     <property name="geometry">
-      <rect>
-       <x>270</x>
-       <y>270</y>
-       <width>231</width>
-       <height>141</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>Dataset parameters</string>
-     </property>
-     <widget class="QWidget" name="layoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>20</y>
-        <width>211</width>
-        <height>41</height>
-       </rect>
-      </property>
-      <layout class="QGridLayout" name="gridLayout_2">
-       <item row="0" column="0">
-        <widget class="QLabel" name="label_18">
-         <property name="text">
-          <string>Train</string>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="middleRowLayout">
+       <property name="spacing">
+        <number>10</number>
+       </property>
+       <item>
+        <widget class="QGroupBox" name="ImageParameters">
+         <property name="title">
+          <string>Image Parameters</string>
          </property>
+         <property name="toolTip">
+          <string>Configure image export settings and grid parameters</string>
+         </property>
+         <layout class="QGridLayout" name="imageParamsLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_5">
+            <property name="text">
+             <string>Format</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLabel" name="label_6">
+            <property name="text">
+             <string>Dpi</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QComboBox" name="comboBoxFileFormat">
+            <item>
+             <property name="text">
+              <string>png</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>jpg</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QComboBox" name="comboBox_Dpi">
+            <property name="currentText">
+             <string>256</string>
+            </property>
+            <property name="currentIndex">
+             <number>2</number>
+            </property>
+            <item>
+             <property name="text">
+              <string>64</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>128</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>256</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>512</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>1024</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_7">
+            <property name="text">
+             <string>Width px.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLabel" name="label_8">
+            <property name="text">
+             <string>Heigth px.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLineEdit" name="lineEdit_WidthPixel">
+            <property name="text">
+             <string>640</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="lineEdit_HeigthPixel">
+            <property name="text">
+             <string>640</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_10">
+            <property name="text">
+             <string>Width m.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLabel" name="label_9">
+            <property name="text">
+             <string>Heigth m.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLineEdit" name="lineEdit_WidthMeter">
+            <property name="text">
+             <string>98.4250</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="lineEdit_HeigthMeter">
+            <property name="text">
+             <string>98.4250</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="label_12">
+            <property name="text">
+             <string>V. overlay m.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLabel" name="label_11">
+            <property name="text">
+             <string>H. overlay m.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLineEdit" name="lineEdit_VerticalOverlay">
+            <property name="text">
+             <string>0</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="lineEdit_HorizontalOverlay">
+            <property name="text">
+             <string>0</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
-       <item row="0" column="1">
-        <widget class="QLabel" name="label_19">
-         <property name="text">
-          <string>Val</string>
+       <item>
+        <widget class="QGroupBox" name="DatasetParameters">
+         <property name="title">
+          <string>Dataset parameters</string>
          </property>
-        </widget>
-       </item>
-       <item row="0" column="2">
-        <widget class="QLabel" name="label_20">
-         <property name="text">
-          <string>Test</string>
+         <property name="toolTip">
+          <string>Configure dataset split ratios and export options</string>
          </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QSpinBox" name="spinBox_Train">
-         <property name="minimum">
-          <number>1</number>
-         </property>
-         <property name="maximum">
-          <number>99</number>
-         </property>
-         <property name="value">
-          <number>80</number>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="QSpinBox" name="spinBox_Val">
-         <property name="minimum">
-          <number>1</number>
-         </property>
-         <property name="maximum">
-          <number>99</number>
-         </property>
-         <property name="value">
-          <number>20</number>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="2">
-        <widget class="QSpinBox" name="spinBox_Test">
-         <property name="minimum">
-          <number>0</number>
-         </property>
-         <property name="maximum">
-          <number>99</number>
-         </property>
-         <property name="value">
-          <number>0</number>
-         </property>
+         <layout class="QVBoxLayout" name="datasetParamsLayout">
+          <item>
+           <layout class="QGridLayout" name="splitLayout">
+            <item row="0" column="0">
+             <widget class="QLabel" name="label_18">
+              <property name="text">
+               <string>Train</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="label_19">
+              <property name="text">
+               <string>Val</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="QLabel" name="label_20">
+              <property name="text">
+               <string>Test</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QSpinBox" name="spinBox_Train">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>99</number>
+              </property>
+              <property name="value">
+               <number>80</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSpinBox" name="spinBox_Val">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>99</number>
+              </property>
+              <property name="value">
+               <number>20</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QSpinBox" name="spinBox_Test">
+              <property name="minimum">
+               <number>0</number>
+              </property>
+              <property name="maximum">
+               <number>99</number>
+              </property>
+              <property name="value">
+               <number>0</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="voidImages">
+            <property name="text">
+             <string>remove empty images</string>
+            </property>
+            <property name="toolTip">
+             <string>Remove images that don't contain any objects</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="checkBox_YoloFormat">
+            <property name="text">
+             <string>Native format</string>
+            </property>
+            <property name="toolTip">
+             <string>Export in native YOLO format (dataset.yaml + labels/) instead of NDJSON</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
       </layout>
-     </widget>
-     <widget class="QCheckBox" name="voidImages">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>70</y>
-        <width>131</width>
-        <height>17</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>remove empty images</string>
-      </property>
-     </widget>
-     <widget class="QCheckBox" name="checkBox_YoloFormat">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>100</y>
-        <width>101</width>
-        <height>17</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Native format</string>
-      </property>
-     </widget>
-    </widget>
-    <widget class="QDialogButtonBox" name="buttonBox">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>520</y>
-       <width>156</width>
-       <height>23</height>
-      </rect>
-     </property>
-     <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
-     </property>
-    </widget>
-    <widget class="QProgressBar" name="progressBar">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>490</y>
-       <width>491</width>
-       <height>23</height>
-      </rect>
-     </property>
-     <property name="value">
-      <number>24</number>
-     </property>
-    </widget>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="buttonsLayout">
+       <property name="spacing">
+        <number>10</number>
+       </property>
+       <item>
+        <widget class="QPushButton" name="manageDatasetsButton">
+         <property name="text">
+          <string>Dataset management</string>
+         </property>
+         <property name="toolTip">
+          <string>Manage multiple datasets, create backups, and view information</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="updateDatasetButton">
+         <property name="text">
+          <string>Update dataset</string>
+         </property>
+         <property name="toolTip">
+          <string>Update and add new data to existing dataset</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QProgressBar" name="progressBar">
+       <property name="value">
+        <number>24</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDialogButtonBox" name="buttonBox">
+       <property name="standardButtons">
+        <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
    <widget class="QWidget" name="Train">
     <attribute name="title">
      <string>Train</string>
     </attribute>
-    <widget class="QToolBox" name="toolBox">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>2</y>
-       <width>491</width>
-       <height>471</height>
-      </rect>
+    <layout class="QVBoxLayout" name="mainTrainLayout">
+     <property name="spacing">
+      <number>10</number>
      </property>
-     <property name="currentIndex">
-      <number>0</number>
+     <property name="leftMargin">
+      <number>10</number>
      </property>
-     <widget class="QWidget" name="trainSettings">
-      <property name="geometry">
-       <rect>
-        <x>0</x>
-        <y>0</y>
-        <width>491</width>
-        <height>390</height>
-       </rect>
-      </property>
-      <property name="focusPolicy">
-       <enum>Qt::NoFocus</enum>
-      </property>
-      <property name="toolTipDuration">
-       <number>-1</number>
-      </property>
-      <attribute name="label">
-       <string>Train Settings</string>
-      </attribute>
-     </widget>
-     <widget class="QWidget" name="augmentationSettings">
-      <property name="geometry">
-       <rect>
-        <x>0</x>
-        <y>0</y>
-        <width>491</width>
-        <height>390</height>
-       </rect>
-      </property>
-      <attribute name="label">
-       <string>Augmentation Settings and Hyperparameters</string>
-      </attribute>
-     </widget>
-     <widget class="QWidget" name="validationSettings">
-      <attribute name="label">
-       <string>Arguments for YOLO Model Validation</string>
-      </attribute>
-     </widget>
-    </widget>
-    <widget class="QDialogButtonBox" name="buttonBox_2">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>520</y>
-       <width>156</width>
-       <height>23</height>
-      </rect>
+     <property name="topMargin">
+      <number>10</number>
      </property>
-     <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     <property name="rightMargin">
+      <number>10</number>
      </property>
-    </widget>
+     <property name="bottomMargin">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="QToolBox" name="toolBox">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="trainSettings">
+        <property name="focusPolicy">
+         <enum>Qt::NoFocus</enum>
+        </property>
+        <property name="toolTipDuration">
+         <number>-1</number>
+        </property>
+        <attribute name="label">
+         <string>Train Settings</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="trainSettingsLayout">
+         <property name="spacing">
+          <number>10</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="trainSettingsLabel">
+           <property name="text">
+            <string>Training settings will be implemented here</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="trainSettingsSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>40</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="augmentationSettings">
+        <attribute name="label">
+         <string>Augmentation Settings and Hyperparameters</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="augmentationLayout">
+         <property name="spacing">
+          <number>10</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="augmentationLabel">
+           <property name="text">
+            <string>Augmentation settings will be implemented here</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="augmentationSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>40</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="validationSettings">
+        <attribute name="label">
+         <string>Arguments for YOLO Model Validation</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="validationLayout">
+         <property name="spacing">
+          <number>10</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="validationLabel">
+           <property name="text">
+            <string>Validation settings will be implemented here</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="validationSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>40</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDialogButtonBox" name="buttonBox_2">
+       <property name="standardButtons">
+        <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
    <widget class="QWidget" name="Detect">
     <attribute name="title">
      <string>Detect</string>
     </attribute>
+    <layout class="QVBoxLayout" name="mainDetectLayout">
+     <property name="spacing">
+      <number>10</number>
+     </property>
+     <property name="leftMargin">
+      <number>10</number>
+     </property>
+     <property name="topMargin">
+      <number>10</number>
+     </property>
+     <property name="rightMargin">
+      <number>10</number>
+     </property>
+     <property name="bottomMargin">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="detectLabel">
+       <property name="text">
+        <string>Detection functionality will be implemented here</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="detectSpacer">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>40</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
    </widget>
    <widget class="QWidget" name="Segment">
     <attribute name="title">
      <string>Segment</string>
     </attribute>
+    <layout class="QVBoxLayout" name="mainSegmentLayout">
+     <property name="spacing">
+      <number>10</number>
+     </property>
+     <property name="leftMargin">
+      <number>10</number>
+     </property>
+     <property name="topMargin">
+      <number>10</number>
+     </property>
+     <property name="rightMargin">
+      <number>10</number>
+     </property>
+     <property name="bottomMargin">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="segmentLabel">
+       <property name="text">
+        <string>Segmentation functionality will be implemented here</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="segmentSpacer">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>40</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
    </widget>
   </widget>
  </widget>

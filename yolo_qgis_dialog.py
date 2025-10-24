@@ -20,6 +20,8 @@ from .map_exporter import export_views
 from .dataset_formatter import format_yolo_dataset 
 from .dataset_formatter_yolo import save_yolo_native_dataset # <--- ДОБАВЛЕН НОВЫЙ ИМПОРТ
 from .processing_utils import ProgressReporter
+from .dataset_update_dialog import DatasetUpdateDialog
+from .dataset_manager_dialog import DatasetManagerDialog
 
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -55,6 +57,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         self.lineEdit_WidthMeter.textChanged.connect(self._update_size_values)
         self.lineEdit_HeigthMeter.textChanged.connect(self._update_size_values)
         self.comboBox_Dpi.currentTextChanged.connect(self._update_size_values)
+        
+        # Подключение кнопок управления датасетами
+        self.updateDatasetButton.clicked.connect(self.open_dataset_update_dialog)
+        self.manageDatasetsButton.clicked.connect(self.open_dataset_manager_dialog)
 
     def _update_size_values(self):
         """Автоматически пересчитывает размеры в метрах или пикселях."""
@@ -227,3 +233,21 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         print("\n--- Процесс успешно завершен ---")
         QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно создан!\nСохранено в: {output_dir}")
         self.accept()
+    
+    def open_dataset_update_dialog(self):
+        """Открывает диалог обновления датасета"""
+        try:
+            update_dialog = DatasetUpdateDialog(self)
+            result = update_dialog.exec_()
+            if result:
+                QtWidgets.QMessageBox.information(self, "Успех", "Датасет успешно обновлен!")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка открытия диалога обновления: {e}")
+    
+    def open_dataset_manager_dialog(self):
+        """Открывает диалог управления датасетами"""
+        try:
+            manager_dialog = DatasetManagerDialog(self)
+            manager_dialog.exec_()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка открытия диалога управления: {e}")
