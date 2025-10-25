@@ -70,7 +70,12 @@ def save_yolo_native_dataset(
             return False, "Не удалось найти поле ID ('id' или 'fid') в слое сетки."
         overlay_id_field = prefix + id_field_names[0]
 
-        exported_images_dir = os.path.join(output_dir, 'images') # Temp dir created by map_exporter
+        # В режиме обновления изображения уже экспортированы в temp_new_data/images
+        # В обычном режиме они в output_dir/images
+        if 'temp_new_data' in output_dir:
+            exported_images_dir = os.path.join(output_dir, 'images')
+        else:
+            exported_images_dir = os.path.join(output_dir, 'images')
 
         for i, tile_feature in enumerate(grid_layer.getFeatures()):
             if progress_reporter and progress_reporter.is_canceled(): return False, "Операция отменена."

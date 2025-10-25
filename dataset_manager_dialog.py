@@ -229,10 +229,17 @@ class DatasetManagerDialog(QtWidgets.QDialog):
     def get_selected_dataset(self):
         """Возвращает выбранный датасет"""
         current_row = self.datasets_table.currentRow()
+        print(f"Выбранная строка: {current_row}")
         if current_row >= 0:
             path_item = self.datasets_table.item(current_row, 7)
             if path_item:
-                return path_item.text()
+                path_text = path_item.text()
+                print(f"Путь из таблицы: {path_text}")
+                return path_text
+            else:
+                print("Элемент пути не найден в таблице")
+        else:
+            print("Не выбрана строка в таблице")
         return None
     
     def show_dataset_info(self):
@@ -380,13 +387,56 @@ class DatasetManagerDialog(QtWidgets.QDialog):
         try:
             import subprocess
             import platform
+            import os
+            
+            print(f"Попытка открыть директорию: {dataset_path}")
+            
+            # Проверяем, что путь существует
+            if not os.path.exists(dataset_path):
+                QMessageBox.warning(self, "Ошибка", f"Директория не существует: {dataset_path}")
+                return
+            
+            # Нормализуем путь для Windows
+            normalized_path = os.path.normpath(dataset_path)
+            print(f"Нормализованный путь: {normalized_path}")
             
             if platform.system() == "Windows":
-                subprocess.run(["explorer", dataset_path])
+                # Сначала пробуем os.startfile (более надежный способ)
+                try:
+                    os.startfile(normalized_path)
+                    print("Директория открыта через os.startfile")
+                except Exception as e_startfile:
+                    print(f"os.startfile не сработал: {e_startfile}")
+                    # Если не сработало, пробуем через subprocess
+                    try:
+                        command = f'explorer "{normalized_path}"'
+                        print(f"Выполняем команду: {command}")
+                        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+                        if result.returncode != 0:
+                            print(f"Ошибка выполнения команды: {result.stderr}")
+                            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть директорию. Код ошибки: {result.returncode}")
+                    except Exception as e_subprocess:
+                        print(f"subprocess также не сработал: {e_subprocess}")
+                        QMessageBox.warning(self, "Ошибка", f"Не удалось открыть директорию: {e_subprocess}")
             elif platform.system() == "Darwin":  # macOS
-                subprocess.run(["open", dataset_path])
+                subprocess.run(["open", normalized_path])
             else:  # Linux
-                subprocess.run(["xdg-open", dataset_path])
+                subprocess.run(["xdg-open", normalized_path])
                 
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть директорию: {e}")
+            print(f"Исключение при открытии директории: {e}")
+            # Предлагаем скопировать путь в буфер обмена
+            reply = QMessageBox.question(
+                self, 
+                "Ошибка открытия", 
+                f"Не удалось открыть директорию: {e}\n\nСкопировать путь в буфер обмена?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                try:
+                    from qgis.PyQt.QtWidgets import QApplication
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(dataset_path)
+                    QMessageBox.information(self, "Успех", "Путь скопирован в буфер обмена")
+                except Exception as e_clipboard:
+                    QMessageBox.warning(self, "Ошибка", f"Не удалось скопировать в буфер обмена: {e_clipboard}")

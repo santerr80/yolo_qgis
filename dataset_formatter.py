@@ -28,7 +28,12 @@ def format_yolo_dataset(
         task_type = metadata.get('task', 'detect').lower() # Получаем тип задачи из метаданных
 
         # --- 1. Подготовка структуры и путей ---
-        images_root_dir = os.path.join(output_dir, 'images')
+        # В режиме обновления изображения уже экспортированы в temp_new_data/images
+        # В обычном режиме они в output_dir/images
+        if 'temp_new_data' in output_dir:
+            images_root_dir = os.path.join(output_dir, 'images')
+        else:
+            images_root_dir = os.path.join(output_dir, 'images')
         ndjson_path = os.path.join(output_dir, 'data.ndjson')
         for split_name in splits.keys():
             os.makedirs(os.path.join(images_root_dir, split_name), exist_ok=True)

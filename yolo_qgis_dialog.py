@@ -20,8 +20,8 @@ from .map_exporter import export_views
 from .dataset_formatter import format_yolo_dataset 
 from .dataset_formatter_yolo import save_yolo_native_dataset # <--- ДОБАВЛЕН НОВЫЙ ИМПОРТ
 from .processing_utils import ProgressReporter
-from .dataset_update_dialog import DatasetUpdateDialog
 from .dataset_manager_dialog import DatasetManagerDialog
+from .dataset_manager import DatasetManager
 
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -59,8 +59,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         self.comboBox_Dpi.currentTextChanged.connect(self._update_size_values)
         
         # Подключение кнопок управления датасетами
-        self.updateDatasetButton.clicked.connect(self.open_dataset_update_dialog)
         self.manageDatasetsButton.clicked.connect(self.open_dataset_manager_dialog)
+        
+        # Подключение checkbox для обновления датасета
+        self.checkBox_UpdateDataset.toggled.connect(self.toggle_update_mode)
 
     def _update_size_values(self):
         """Автоматически пересчитывает размеры в метрах или пикселях."""
@@ -119,6 +121,15 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.spinBox_Train.setValue(new_train); self.spinBox_Val.setValue(new_val)
         finally:
             self.spinBox_Train.blockSignals(False); self.spinBox_Val.blockSignals(False); self.spinBox_Test.blockSignals(False)
+    
+    def toggle_update_mode(self, checked):
+        """Переключает режим обновления датасета"""
+        if checked:
+            # В режиме обновления меняем подсказку для основного поля
+            self.mQgsFileWidget.setToolTip("Dataset directory - will update existing dataset if found, otherwise create new one")
+        else:
+            # В обычном режиме возвращаем стандартную подсказку
+            self.mQgsFileWidget.setToolTip("Dataset directory for new dataset")
 
     def run_dataset_creation(self):
         """Основная функция, запускающая весь процесс."""
@@ -130,8 +141,21 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             output_dir = self.mQgsFileWidget.filePath()
             objects_layer = self.mMapLayerComboBoxObjects.currentLayer()
             classes_field = self.mFieldComboBoxObjects.currentField()
+            is_update_mode = self.checkBox_UpdateDataset.isChecked()
+            
             if not all([output_dir, objects_layer, classes_field]):
                 raise ValueError("Необходимо заполнить все поля в группе 'Setup'.")
+            
+            # В режиме обновления проверяем, есть ли существующий датасет в указанной директории
+            if is_update_mode:
+                from .dataset_utils import DatasetUtils
+                is_valid_dataset, _ = DatasetUtils.validate_dataset_path(output_dir)
+                if not is_valid_dataset:
+                    # Если датасета нет, переключаемся в режим создания нового
+                    is_update_mode = False
+                    print("В указанной директории не найден существующий датасет. Создается новый датасет.")
+                else:
+                    print(f"Найден существующий датасет в директории: {output_dir}")
             
             img_width_m = float(self.lineEdit_WidthMeter.text())
             img_height_m = float(self.lineEdit_HeigthMeter.text())
@@ -179,7 +203,16 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # --- ШАГ 3: Экспорт изображений (25% -> 75%) ---
         print("\n3. Экспорт изображений тайлов...")
-        images_output_dir = os.path.join(output_dir, 'images')
+        
+        # В режиме обновления экспортируем изображения в существующий датасет
+        if is_update_mode:
+            # Создаем временную структуру в существующем датасете
+            temp_images_dir = os.path.join(output_dir, 'temp_new_data', 'images')
+            os.makedirs(temp_images_dir, exist_ok=True)
+            images_output_dir = temp_images_dir
+        else:
+            images_output_dir = os.path.join(output_dir, 'images')
+        
         progress_reporter_export = ProgressReporter(self.progressBar, start_percentage=25, end_percentage=75)
         success, error_msg = export_views(
             grid_layer=grid_layer, output_dir=images_output_dir, image_format=img_format,
@@ -207,8 +240,21 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         delete_void = self.voidImages.isChecked()
         progress_reporter_format = ProgressReporter(self.progressBar, start_percentage=75, end_percentage=100)
         
-        # --- ИЗМЕНЕНИЕ: ВЫБОР ФОРМАТА ДЛЯ СОХРАНЕНИЯ ---
-        if save_in_yolo_format:
+        # --- ИЗМЕНЕНИЕ: ВЫБОР РЕЖИМА РАБОТЫ ---
+        if is_update_mode:
+            print("\n4. Обновление существующего датасета...")
+            success, error_msg = self.update_existing_dataset(
+                existing_dataset_path=output_dir,
+                intersected_layer=intersected_layer, 
+                grid_layer=grid_layer,
+                class_field=classes_field, 
+                image_format=img_format,
+                splits=splits, 
+                metadata=metadata, 
+                delete_void=delete_void,
+                progress_reporter=progress_reporter_format
+            )
+        elif save_in_yolo_format:
             print("\n4. Формирование датасета в нативном формате YOLO...")
             success, error_msg = save_yolo_native_dataset(
                 intersected_layer=intersected_layer, grid_layer=grid_layer,
@@ -231,18 +277,79 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         
         self.progressBar.setValue(100)
         print("\n--- Процесс успешно завершен ---")
-        QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно создан!\nСохранено в: {output_dir}")
-        self.accept()
+        if is_update_mode:
+            QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно обновлен!\nОбновлен в: {output_dir}")
+        else:
+            QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно создан!\nСохранено в: {output_dir}")
+        # self.accept()  # Убрано, чтобы окно не закрывалось после выполнения
     
-    def open_dataset_update_dialog(self):
-        """Открывает диалог обновления датасета"""
+    def update_existing_dataset(self, existing_dataset_path, intersected_layer, grid_layer, 
+                               class_field, image_format, splits, metadata, delete_void, progress_reporter):
+        """Обновляет существующий датасет новыми данными"""
         try:
-            update_dialog = DatasetUpdateDialog(self)
-            result = update_dialog.exec_()
-            if result:
-                QtWidgets.QMessageBox.information(self, "Успех", "Датасет успешно обновлен!")
+            # Инициализируем менеджер датасета
+            dataset_manager = DatasetManager(existing_dataset_path)
+            can_update, message = dataset_manager.can_update_dataset()
+            
+            if not can_update:
+                return False, f"Не удается обновить датасет: {message}"
+            
+            # Создаем резервную копию
+            progress_reporter.set_progress(1, 5)
+            success, backup_message = dataset_manager.create_backup()
+            if not success:
+                print(f"Предупреждение: {backup_message}")
+            else:
+                print(f"Резервная копия: {backup_message}")
+            
+            # Обновляем метаданные
+            progress_reporter.set_progress(2, 5)
+            success, meta_message = dataset_manager.update_dataset_metadata(metadata)
+            if not success:
+                return False, f"Ошибка обновления метаданных: {meta_message}"
+            
+            # Извлекаем новые классы из векторного слоя
+            progress_reporter.set_progress(3, 5)
+            field_index = intersected_layer.fields().indexFromName(class_field)
+            if field_index == -1:
+                return False, f"Поле '{class_field}' не найдено в слое"
+            
+            unique_values = intersected_layer.uniqueValues(field_index)
+            all_classes = [str(val) for val in unique_values if val is not None and str(val).strip()]
+            
+            # Получаем существующие классы из датасета
+            existing_classes = set(dataset_manager.class_names.values())
+            
+            # Находим новые классы
+            new_classes = [cls for cls in all_classes if cls not in existing_classes]
+            
+            # Добавляем новые классы
+            if new_classes:
+                success, classes_message = dataset_manager.add_new_classes(new_classes)
+                if not success:
+                    return False, f"Ошибка добавления классов: {classes_message}"
+                print(f"Добавлены новые классы: {', '.join(new_classes)}")
+            
+            # Добавляем новые данные
+            progress_reporter.set_progress(4, 5)
+            success, data_message = dataset_manager.append_new_data(
+                intersected_layer=intersected_layer,
+                grid_layer=grid_layer,
+                class_field=class_field,
+                image_format=image_format,
+                splits=splits,
+                delete_void=delete_void,
+                progress_reporter=progress_reporter,
+                metadata=metadata
+            )
+            
+            if not success:
+                return False, f"Ошибка добавления данных: {data_message}"
+            
+            return True, "Датасет успешно обновлен"
+            
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка открытия диалога обновления: {e}")
+            return False, f"Критическая ошибка при обновлении датасета: {e}"
     
     def open_dataset_manager_dialog(self):
         """Открывает диалог управления датасетами"""
