@@ -294,15 +294,18 @@ yolo_qgis/
 ### 1. Установка зависимостей
 
 ```bash
-# Основные зависимости
+# Основные зависимости (совместимые с numpy v1)
 pip install ultralytics torch torchvision
 
-# Дополнительные зависимости для анализа
-pip install matplotlib seaborn pandas numpy
+# Дополнительные зависимости для анализа (совместимые с numpy v1)
+pip install 'numpy>=1.21.0,<2.0.0' 'pandas>=1.3.0,<2.0.0'
+pip install 'matplotlib>=3.4.0,<4.0.0' 'seaborn>=0.11.0,<1.0.0'
 
 # Зависимости для работы с файлами
-pip install PyYAML opencv-python Pillow
+pip install PyYAML 'opencv-python>=4.5.0,<5.0.0' Pillow
 ```
+
+**ВАЖНО**: Все зависимости ограничены версиями, совместимыми с numpy v1.x для стабильной работы в QGIS.
 
 ### 2. Проверка установки
 
@@ -319,6 +322,26 @@ try:
     print(f"✓ PyTorch установлен: {torch.__version__}")
 except ImportError:
     print("✗ PyTorch не установлен")
+
+# Проверка совместимости numpy
+try:
+    import numpy as np
+    version_parts = np.__version__.split('.')
+    major_version = int(version_parts[0])
+    if major_version >= 2:
+        print(f"⚠ numpy {np.__version__} может быть несовместима с QGIS (требуется v1.x)")
+    else:
+        print(f"✓ numpy {np.__version__} совместима с QGIS")
+except ImportError:
+    print("✗ numpy не установлен")
+```
+
+### 3. Проверка совместимости
+
+Для полной проверки совместимости используйте утилиту:
+
+```bash
+python compatibility_checker.py
 ```
 
 ## Мониторинг и отладка

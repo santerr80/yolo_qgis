@@ -31,6 +31,7 @@ from .yolo_validation import AdvancedValidator, ModelComparator
 from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
 
 
+
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'yolo_qgis_dialog_base.ui'))
 
@@ -40,6 +41,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         """Конструктор."""
         super(YoloQgisDialog, self).__init__(parent)
+        
         self.setupUi(self)
         
         # Инициализация компонентов тренировки

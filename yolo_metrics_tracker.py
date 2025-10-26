@@ -12,9 +12,22 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional, Union, Any
 from pathlib import Path
-import logging
+
+# Fix for NumPy stderr issue in QGIS environment
+from . import stderr_fix
 
 # Опциональные импорты с обработкой ошибок
+try:
+    import numpy as np
+    # Проверяем совместимость версии numpy
+    if hasattr(np, '__version__'):
+        version_parts = np.__version__.split('.')
+        major_version = int(version_parts[0])
+        if major_version >= 2:
+            print(f"Предупреждение: numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
+except ImportError:
+    np = None
+
 try:
     from qgis.PyQt.QtCore import QObject, pyqtSignal, QTimer
     from qgis.PyQt.QtWidgets import QApplication
@@ -35,88 +48,6 @@ except ImportError:
         pass
 
 
-class MetricsLogger:
-    """Класс для логирования метрик в различные форматы"""
-    
-    def __init__(self, log_dir: str = None):
-        self.log_dir = log_dir or 'logs'
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.setup_logging()
-    
-    def setup_logging(self):
-        """Настраивает систему логирования"""
-        log_file = os.path.join(self.log_dir, 'yolo_training.log')
-        
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
-        
-        self.logger = logging.getLogger('yolo_training')
-    
-    def log_metrics(self, metrics: Dict, epoch: int = None, phase: str = 'training'):
-        """Логирует метрики"""
-        timestamp = datetime.now(timezone.utc).isoformat()
-        
-        log_entry = {
-            'timestamp': timestamp,
-            'epoch': epoch,
-            'phase': phase,
-            'metrics': metrics
-        }
-        
-        self.logger.info(f"Epoch {epoch} - {phase}: {metrics}")
-        
-        # Сохраняем в JSON файл
-        self._save_to_json(log_entry)
-        
-        # Сохраняем в CSV файл
-        self._save_to_csv(log_entry)
-    
-    def _save_to_json(self, log_entry: Dict):
-        """Сохраняет метрики в JSON файл"""
-        json_file = os.path.join(self.log_dir, 'metrics.json')
-        
-        # Читаем существующие данные
-        if os.path.exists(json_file):
-            with open(json_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        else:
-            data = []
-        
-        # Добавляем новую запись
-        data.append(log_entry)
-        
-        # Сохраняем обратно
-        with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    
-    def _save_to_csv(self, log_entry: Dict):
-        """Сохраняет метрики в CSV файл"""
-        csv_file = os.path.join(self.log_dir, 'metrics.csv')
-        
-        # Подготавливаем данные для CSV
-        row_data = {
-            'timestamp': log_entry['timestamp'],
-            'epoch': log_entry.get('epoch', ''),
-            'phase': log_entry['phase']
-        }
-        
-        # Добавляем метрики
-        metrics = log_entry.get('metrics', {})
-        row_data.update(metrics)
-        
-        # Записываем в CSV
-        file_exists = os.path.exists(csv_file)
-        with open(csv_file, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=row_data.keys())
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row_data)
 
 
 class MetricsDatabase:
@@ -341,7 +272,6 @@ class MetricsTracker(QObject):
     
     def __init__(self, log_dir: str = None, db_path: str = None):
         super().__init__()
-        self.logger = MetricsLogger(log_dir)
         self.database = MetricsDatabase(db_path)
         self.current_experiment = None
         self.metrics_history = []
@@ -360,7 +290,6 @@ class MetricsTracker(QObject):
         
         if success:
             self.experiment_started.emit(experiment_id)
-            self.logger.logger.info(f"Начат эксперимент: {name} ({experiment_id})")
         
         return success
     
@@ -370,7 +299,6 @@ class MetricsTracker(QObject):
             return
         
         # Логируем в файлы
-        self.logger.log_metrics(metrics, epoch, 'training')
         
         # Логируем в базу данных
         self.database.log_metrics(self.current_experiment, epoch, 'training', metrics)
@@ -397,7 +325,6 @@ class MetricsTracker(QObject):
             return
         
         # Логируем в файлы
-        self.logger.log_metrics(metrics, epoch, 'validation')
         
         # Логируем в базу данных
         self.database.log_metrics(self.current_experiment, epoch, 'validation', metrics)
@@ -434,7 +361,6 @@ class MetricsTracker(QObject):
         # Отправляем сигнал
         self.experiment_completed.emit(self.current_experiment, results)
         
-        self.logger.logger.info(f"Эксперимент завершен: {self.current_experiment}")
     
     def get_experiment_summary(self, experiment_id: str = None) -> Dict:
         """Получает сводку по эксперименту"""
@@ -655,6 +581,10 @@ class MetricsVisualizer:
                 import matplotlib.pyplot as plt
             except ImportError:
                 print("matplotlib не установлен. График не будет создан.")
+                return False
+            
+            if np is None:
+                print("numpy не установлен. График не будет создан.")
                 return False
             
             plt.figure(figsize=(14, 10))

@@ -8,6 +8,9 @@ import json
 from typing import Dict, List, Tuple, Optional, Union
 from pathlib import Path
 
+# Fix for NumPy stderr issue in QGIS environment
+from . import stderr_fix
+
 # Опциональные импорты
 try:
     import yaml
@@ -16,6 +19,12 @@ except ImportError:
 
 try:
     import numpy as np
+    # Проверяем совместимость версии numpy
+    if hasattr(np, '__version__'):
+        version_parts = np.__version__.split('.')
+        major_version = int(version_parts[0])
+        if major_version >= 2:
+            print(f"Предупреждение: numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
 except ImportError:
     np = None
 

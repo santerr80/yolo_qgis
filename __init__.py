@@ -23,6 +23,10 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
+# Fix for NumPy stderr issue in QGIS environment
+# This ensures sys.stderr is properly initialized before any NumPy operations
+from . import stderr_fix
+
 
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name

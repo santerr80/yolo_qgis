@@ -21,6 +21,13 @@
  *                                                                         *
  ***************************************************************************/
 """
+import sys
+import os
+
+# Fix for NumPy stderr issue in QGIS environment
+# This ensures sys.stderr is properly initialized before any NumPy operations
+from . import stderr_fix
+
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
@@ -47,6 +54,8 @@ class YoloQgis:
         self.iface = iface
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
+        
+        
         # initialize locale
         locale = QSettings().value('locale/userLocale')[0:2]
         locale_path = os.path.join(
@@ -160,7 +169,6 @@ class YoloQgis:
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
-
         icon_path = ':/plugins/yolo_qgis/icon.png'
         self.add_action(
             icon_path,
@@ -183,7 +191,6 @@ class YoloQgis:
 
     def run(self):
         """Run method that performs all the real work"""
-
         try:
             # Create the dialog with elements (after translation) and keep reference
             # Only create GUI ONCE in callback, so that it will only load when the plugin is started

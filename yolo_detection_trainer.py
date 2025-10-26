@@ -9,6 +9,9 @@ import yaml
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
+# Fix for NumPy stderr issue in QGIS environment
+from . import stderr_fix
+
 from .yolo_trainer import YOLOTrainer, TrainingProgress, ModelValidator, ModelPredictor
 
 

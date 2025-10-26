@@ -17,8 +17,20 @@ from typing import Dict, List, Tuple, Optional, Union, Callable
 from pathlib import Path
 import tempfile
 
+# Fix for NumPy stderr issue in QGIS environment
+from . import stderr_fix
+
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread, QTimer
 from qgis.PyQt.QtWidgets import QMessageBox
+
+# Настройка для предотвращения создания новых окон
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+    # Устанавливаем флаг для предотвращения создания консольного окна
+    kernel32 = ctypes.windll.kernel32
+    kernel32.SetConsoleCP(65001)
+    kernel32.SetConsoleOutputCP(65001)
 
 
 class TrainingProgress(QObject):
@@ -201,6 +213,7 @@ class TrainingThread(QThread):
         self.progress = progress
         self.process = None
         self.is_canceled = False
+        self.current_model = None
     
     def run(self):
         """Запускает обучение"""
@@ -224,6 +237,12 @@ class TrainingThread(QThread):
         self.is_canceled = True
         if self.process:
             self.process.terminate()
+        if self.current_model:
+            # Останавливаем обучение модели
+            try:
+                self.current_model.stop = True
+            except:
+                pass
     
     def _check_ultralytics(self) -> bool:
         """Проверяет наличие библиотеки ultralytics"""
@@ -242,11 +261,32 @@ import json
 import time
 from pathlib import Path
 
+# Настройка для предотвращения создания новых окон
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+    # Устанавливаем флаг для предотвращения создания консольного окна
+    kernel32 = ctypes.windll.kernel32
+    kernel32.SetConsoleCP(65001)
+    kernel32.SetConsoleOutputCP(65001)
+    
+    # Дополнительные настройки для предотвращения создания окон
+    import subprocess
+    import tempfile
+    
+    def log_print(*args, **kwargs):
+        """Функция для логирования (заглушка)"""
+        pass
+else:
+    def log_print(*args, **kwargs):
+        """Функция для логирования (заглушка)"""
+        pass
+
 try:
     from ultralytics import YOLO
     import torch
 except ImportError as e:
-    print(f"Ошибка импорта: {{e}}")
+    log_print(f"Ошибка импорта: {{e}}")
     sys.exit(1)
 
 def train_model():
@@ -313,11 +353,18 @@ def train_model():
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
             }}, f, indent=2)
         
-        print("Обучение завершено успешно")
+        log_print("Обучение завершено успешно")
         
     except Exception as e:
-        print(f"Ошибка обучения: {{e}}")
+        log_print(f"Ошибка обучения: {{e}}")
         sys.exit(1)
+    finally:
+        # Закрываем файл лога
+        if 'log_fd' in locals() and log_fd is not None:
+            try:
+                log_fd.close()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     train_model()
@@ -329,16 +376,126 @@ if __name__ == "__main__":
         
         return script_path
     
-    def _run_training_script(self, script_path: str):
-        """Запускает скрипт обучения"""
+    def _run_training_directly(self):
+        """Запускает обучение напрямую через ultralytics API"""
         try:
-            # Запускаем Python скрипт
+            # Проверяем наличие ultralytics
+            if not self._check_ultralytics():
+                self.progress.training_finished.emit(False, "Библиотека ultralytics не установлена")
+                return
+            
+            # Импортируем необходимые модули
+            from ultralytics import YOLO
+            import torch
+            
+            # Конфигурация
+            dataset_path = self.config['dataset_path']
+            model_type = self.config['model_type']
+            task = self.config['task']
+            epochs = self.config['epochs']
+            batch_size = self.config['batch_size']
+            image_size = self.config['image_size']
+            learning_rate = self.config['learning_rate']
+            device = self.config['device']
+            pretrained = self.config['pretrained']
+            save_dir = self.config['save_dir']
+            project_name = self.config['project_name']
+            
+            # Создаем директорию для сохранения
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Загружаем модель
+            model = YOLO(f"{model_type}.pt" if pretrained else f"{model_type}.yaml")
+            self.current_model = model
+            
+            # Настраиваем параметры обучения
+            train_args = {
+                'data': os.path.join(dataset_path, 'dataset.yaml'),
+                'epochs': epochs,
+                'batch': batch_size,
+                'imgsz': image_size,
+                'lr0': learning_rate,
+                'device': device,
+                'project': save_dir,
+                'name': project_name,
+                'exist_ok': True,
+                'save': True,
+                'save_period': 10,
+                'cache': False,
+                'workers': 4,
+                'patience': 50,
+                'verbose': True
+            }
+            
+            # Добавляем дополнительные параметры
+            additional_params = self.config['additional_params']
+            train_args.update(additional_params)
+            
+            # Запускаем обучение
+            self.progress.status_updated.emit("Начинаем обучение...")
+            
+            # Простой запуск без сложных callback'ов
+            results = model.train(**train_args)
+            
+            # Обновляем прогресс после завершения
+            self.progress.progress_updated.emit(100)
+            self.progress.status_updated.emit("Обучение завершено")
+            
+            # Сохраняем результаты
+            try:
+                results_path = os.path.join(save_dir, project_name, 'training_results.json')
+                os.makedirs(os.path.dirname(results_path), exist_ok=True)
+                with open(results_path, 'w') as f:
+                    import json
+                    import time
+                    json.dump({
+                        'model_type': model_type,
+                        'task': task,
+                        'epochs': epochs,
+                        'batch_size': batch_size,
+                        'image_size': image_size,
+                        'learning_rate': learning_rate,
+                        'device': device,
+                        'pretrained': pretrained,
+                        'dataset_path': dataset_path,
+                        'training_completed': True,
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }, f, indent=2)
+            except Exception as e:
+                print(f"Ошибка сохранения результатов: {e}")
+            
+            self.progress.training_finished.emit(True, "Обучение завершено успешно")
+            
+        except Exception as e:
+            self.progress.training_finished.emit(False, f"Ошибка обучения: {e}")
+    
+    def _run_training_subprocess(self, script_path: str):
+        """Запускает обучение через subprocess с улучшенными настройками"""
+        try:
+            # Настройки для Windows
+            startupinfo = None
+            creationflags = 0
+            
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
+            
+            # Попробуем использовать pythonw.exe вместо python.exe для Windows
+            python_executable = sys.executable
+            if sys.platform == "win32" and python_executable.endswith("python.exe"):
+                python_executable = python_executable.replace("python.exe", "pythonw.exe")
+            
             self.process = subprocess.Popen(
-                [sys.executable, script_path],
+                [python_executable, script_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                cwd=self.config['temp_dir']
+                cwd=self.config['temp_dir'],
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                shell=False
             )
             
             # Читаем вывод в реальном времени
@@ -361,6 +518,16 @@ if __name__ == "__main__":
                 self.progress.training_finished.emit(True, "Обучение завершено успешно")
             else:
                 self.progress.training_finished.emit(False, f"Обучение завершилось с ошибкой (код: {return_code})")
+                
+        except Exception as e:
+            self.progress.training_finished.emit(False, f"Ошибка запуска обучения: {e}")
+    
+    def _run_training_script(self, script_path: str):
+        """Запускает скрипт обучения"""
+        try:
+            # Всегда пытаемся запустить обучение напрямую через ultralytics API
+            # вместо создания отдельного процесса
+            self._run_training_directly()
                 
         except Exception as e:
             self.progress.training_finished.emit(False, f"Ошибка запуска обучения: {e}")

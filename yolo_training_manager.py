@@ -11,6 +11,9 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Union
 from pathlib import Path
 
+# Fix for NumPy stderr issue in QGIS environment
+from . import stderr_fix
+
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread
 from qgis.PyQt.QtWidgets import QMessageBox
 
@@ -261,9 +264,10 @@ class YOLOTrainingManager(QObject):
             
             # Логируем результаты валидации
             if experiment_id and 'error' not in results:
-                self.metrics_tracker.log_final_validation(
-                    model_path, dataset_path, results.get('performance_metrics', {})
-                )
+                # self.metrics_tracker.log_final_validation(
+                #     model_path, dataset_path, results.get('performance_metrics', {})
+                # )
+                pass
             
             if experiment_id:
                 self.validation_completed.emit(experiment_id, results)
@@ -380,7 +384,7 @@ class YOLOTrainingManager(QObject):
             if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
                 # Логируем метрики
                 current_epoch = exp_info['trainer'].progress.current_epoch
-                self.metrics_tracker.log_training_metrics(current_epoch, metrics)
+                # self.metrics_tracker.log_training_metrics(current_epoch, metrics)
                 
                 # Отправляем сигнал
                 self.training_progress.emit(current_epoch, metrics)
