@@ -6,6 +6,7 @@
 
 import os
 import sys
+import io
 import json
 import yaml
 import shutil
@@ -379,6 +380,12 @@ if __name__ == "__main__":
     def _run_training_directly(self):
         """Запускает обучение напрямую через ultralytics API"""
         try:
+            # В среде QGIS stdout/stderr могут быть None — починим это перед импортами/логированием
+            if sys.stdout is None:
+                sys.stdout = io.StringIO()
+            if sys.stderr is None:
+                sys.stderr = io.StringIO()
+
             # Проверяем наличие ultralytics
             if not self._check_ultralytics():
                 self.progress.training_finished.emit(False, "Библиотека ultralytics не установлена")
@@ -432,7 +439,61 @@ if __name__ == "__main__":
             train_args.update(additional_params)
             
             # Запускаем обучение
+            self.progress.total_epochs = epochs
             self.progress.status_updated.emit("Начинаем обучение...")
+
+            # Коллбеки Ultralytics для онлайновых метрик по эпохам
+            def _on_fit_epoch_end(trainer_obj):
+                try:
+                    current_epoch = int(getattr(trainer_obj, 'epoch', 0)) + 1
+                    total_epochs = int(getattr(trainer_obj, 'args', {}).get('epochs', self.progress.total_epochs) or self.progress.total_epochs)
+                    self.progress.current_epoch = current_epoch
+                    self.progress.total_epochs = total_epochs
+
+                    # Извлечь метрики: trainer_obj.metrics может быть dict или объект
+                    raw_metrics = getattr(trainer_obj, 'metrics', {})
+                    metrics: dict = {}
+                    if isinstance(raw_metrics, dict):
+                        metrics = {k: float(v) for k, v in raw_metrics.items() if isinstance(v, (int, float))}
+                    else:
+                        # Попытка вытащить наиболее типичные атрибуты
+                        for key in ['loss', 'box_loss', 'seg_loss', 'cls_loss', 'dfl_loss', 'lr']:
+                            if hasattr(raw_metrics, key):
+                                try:
+                                    metrics[key] = float(getattr(raw_metrics, key))
+                                except Exception:
+                                    pass
+
+                    # Обновляем и эмитим
+                    if metrics:
+                        self.progress.current_metrics.update(metrics)
+                        self.progress.metrics_updated.emit(self.progress.current_metrics.copy())
+
+                    if total_epochs > 0:
+                        progress_percent = max(0, min(100, int((current_epoch / total_epochs) * 100)))
+                        self.progress.progress_updated.emit(progress_percent)
+
+                    # Строка статуса для инфо-окна
+                    summary_parts = [f"{k}={v:.4f}" for k, v in metrics.items()]
+                    status_line = f"Эпоха {current_epoch}/{total_epochs} " + (" ".join(summary_parts) if summary_parts else "")
+                    self.progress.status_updated.emit(status_line)
+                except Exception:
+                    # Не мешаем обучению, если парсинг метрик не удался
+                    pass
+
+            def _on_train_start(trainer_obj):
+                self.progress.status_updated.emit("Старт обучения модели")
+
+            def _on_train_end(trainer_obj):
+                self.progress.status_updated.emit("Обучение завершено, сохранение результатов...")
+
+            try:
+                model.add_callback('on_fit_epoch_end', _on_fit_epoch_end)
+                model.add_callback('on_train_start', _on_train_start)
+                model.add_callback('on_train_end', _on_train_end)
+            except Exception:
+                # Если API коллбеков недоступен, просто продолжаем без онлайновых метрик
+                pass
             
             # Простой запуск без сложных callback'ов
             results = model.train(**train_args)
