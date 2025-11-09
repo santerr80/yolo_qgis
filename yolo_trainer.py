@@ -63,6 +63,68 @@ class YOLOTrainer(QObject):
         self.training_process = None
         self.temp_dir = None
         self.model_config = None
+    
+    @staticmethod
+    def _check_cuda_available() -> bool:
+        """Проверяет доступность CUDA"""
+        try:
+            import torch
+            return torch.cuda.is_available() and torch.cuda.device_count() > 0
+        except ImportError:
+            return False
+        except Exception:
+            return False
+    
+    @staticmethod
+    def _get_valid_device(requested_device: str) -> str:
+        """
+        Проверяет доступность запрошенного устройства и возвращает валидное
+        
+        :param requested_device: Запрошенное устройство ('cpu', '0', '1', etc.)
+        :return: Валидное устройство
+        """
+        # Если запрошен CPU, возвращаем CPU
+        if requested_device.lower() == 'cpu':
+            return 'cpu'
+        
+        # Если CUDA не доступна, возвращаем CPU
+        if not YOLOTrainer._check_cuda_available():
+            return 'cpu'
+        
+        # CUDA доступна, проверяем запрошенное устройство
+        try:
+            import torch
+            
+            # Если device - это число (например, '0', '1')
+            if requested_device.isdigit():
+                device_id = int(requested_device)
+                if device_id < torch.cuda.device_count():
+                    return requested_device
+                else:
+                    # Устройство не существует, используем первое доступное
+                    return '0' if torch.cuda.device_count() > 0 else 'cpu'
+            
+            # Если device начинается с 'cuda:', извлекаем номер устройства
+            if requested_device.lower().startswith('cuda:'):
+                try:
+                    device_id = int(requested_device.split(':')[1])
+                    if device_id < torch.cuda.device_count():
+                        return requested_device
+                    else:
+                        return '0' if torch.cuda.device_count() > 0 else 'cpu'
+                except (ValueError, IndexError):
+                    return '0' if torch.cuda.device_count() > 0 else 'cpu'
+            
+            # Для любых других значений, которые могут быть валидными для torch
+            # возвращаем как есть, если CUDA доступна
+            return requested_device
+            
+        except ImportError:
+            # torch не установлен, возвращаем CPU
+            return 'cpu'
+        except Exception:
+            # Любая другая ошибка - возвращаем CPU
+            return 'cpu'
         
     def train_model(self, 
                    dataset_path: str,
@@ -174,6 +236,15 @@ class YOLOTrainer(QObject):
     
     def _prepare_training_config(self, **kwargs) -> Dict:
         """Подготавливает конфигурацию для обучения"""
+        # Проверяем и корректируем device
+        requested_device = kwargs.get('device', 'cpu')
+        valid_device = self._get_valid_device(requested_device)
+        
+        # Если device был изменен, уведомляем пользователя
+        if requested_device != valid_device and requested_device.lower() != 'cpu':
+            warning_msg = f"CUDA устройство '{requested_device}' недоступно. Используется CPU."
+            self.progress.status_updated.emit(warning_msg)
+        
         config = {
             'dataset_path': kwargs['dataset_path'],
             'model_type': kwargs['model_type'],
@@ -182,7 +253,7 @@ class YOLOTrainer(QObject):
             'batch_size': kwargs['batch_size'],
             'image_size': kwargs['image_size'],
             'learning_rate': kwargs['learning_rate'],
-            'device': kwargs['device'],
+            'device': valid_device,
             'pretrained': kwargs['pretrained'],
             'save_dir': kwargs['save_dir'],
             'project_name': kwargs['project_name'],
@@ -305,6 +376,17 @@ def train_model():
         save_dir = r"{self.config['save_dir']}"
         project_name = "{self.config['project_name']}"
         
+        # Проверяем доступность CUDA перед использованием device
+        if device != 'cpu':
+            if not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
+                log_print("CUDA недоступна. Переключение на CPU.")
+                device = 'cpu'
+            elif device.isdigit():
+                device_id = int(device)
+                if device_id >= torch.cuda.device_count():
+                    log_print(f"CUDA устройство '{{device}}' недоступно. Используется CPU.")
+                    device = 'cpu' if torch.cuda.device_count() == 0 else '0'
+        
         # Создаем директорию для сохранения
         os.makedirs(save_dir, exist_ok=True)
         
@@ -407,6 +489,23 @@ if __name__ == "__main__":
             pretrained = self.config['pretrained']
             save_dir = self.config['save_dir']
             project_name = self.config['project_name']
+            
+            # Дополнительная проверка CUDA перед использованием
+            if device != 'cpu':
+                if not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
+                    device = 'cpu'
+                    self.progress.status_updated.emit(
+                        f"CUDA недоступна. Обучение будет выполнено на CPU."
+                    )
+                elif device.isdigit():
+                    # Проверяем, что запрошенное устройство существует
+                    device_id = int(device)
+                    if device_id >= torch.cuda.device_count():
+                        device = 'cpu' if torch.cuda.device_count() == 0 else '0'
+                        self.progress.status_updated.emit(
+                            f"CUDA устройство '{self.config['device']}' недоступно. "
+                            f"Используется {'CPU' if device == 'cpu' else 'CUDA:0'}."
+                        )
             
             # Создаем директорию для сохранения
             os.makedirs(save_dir, exist_ok=True)
