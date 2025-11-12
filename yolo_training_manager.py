@@ -33,6 +33,7 @@ class YOLOTrainingManager(QObject):
     training_completed = pyqtSignal(str, bool, str)  # experiment_id, success, message
     validation_started = pyqtSignal(str)  # experiment_id
     validation_completed = pyqtSignal(str, dict)  # experiment_id, results
+    status_message = pyqtSignal(str)  # произвольные статусные сообщения из тренера
     
     def __init__(self, log_dir: str = None, db_path: str = None):
         super().__init__()
@@ -59,12 +60,18 @@ class YOLOTrainingManager(QObject):
         self.detection_trainer.progress.progress_updated.connect(self._on_progress_updated)
         self.detection_trainer.progress.epoch_updated.connect(self._on_epoch_updated)
         self.detection_trainer.progress.metrics_updated.connect(self._on_metrics_updated)
+        self.detection_trainer.progress.training_metrics_updated.connect(self._on_training_metrics_updated)
+        self.detection_trainer.progress.validation_metrics_updated.connect(self._on_validation_metrics_updated)
         self.detection_trainer.progress.training_finished.connect(self._on_training_finished)
+        self.detection_trainer.progress.status_updated.connect(self._on_status_updated)
         
         self.segmentation_trainer.progress.progress_updated.connect(self._on_progress_updated)
         self.segmentation_trainer.progress.epoch_updated.connect(self._on_epoch_updated)
         self.segmentation_trainer.progress.metrics_updated.connect(self._on_metrics_updated)
+        self.segmentation_trainer.progress.training_metrics_updated.connect(self._on_training_metrics_updated)
+        self.segmentation_trainer.progress.validation_metrics_updated.connect(self._on_validation_metrics_updated)
         self.segmentation_trainer.progress.training_finished.connect(self._on_training_finished)
+        self.segmentation_trainer.progress.status_updated.connect(self._on_status_updated)
         
         # Подключаем сигналы от трекера метрик
         self.metrics_tracker.metrics_updated.connect(self._on_metrics_tracked)
@@ -118,6 +125,9 @@ class YOLOTrainingManager(QObject):
                 'config': config,
                 'start_time': datetime.now()
             }
+            
+            # Сохраняем experiment_id в progress для удобного доступа
+            self.detection_trainer.progress.experiment_id = experiment_id
             
             # Запускаем обучение
             success = self.detection_trainer.train_detection_model(
@@ -195,6 +205,9 @@ class YOLOTrainingManager(QObject):
                 'config': config,
                 'start_time': datetime.now()
             }
+            
+            # Сохраняем experiment_id в progress для удобного доступа
+            self.segmentation_trainer.progress.experiment_id = experiment_id
             
             # Запускаем обучение
             success = self.segmentation_trainer.train_segmentation_model(
@@ -378,17 +391,52 @@ class YOLOTrainingManager(QObject):
                 break
     
     def _on_metrics_updated(self, metrics: Dict):
-        """Обработчик обновления метрик"""
+        """Обработчик обновления метрик (объединенные, для обратной совместимости)"""
         # Находим соответствующий эксперимент
         for exp_id, exp_info in self.active_experiments.items():
             if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
-                # Логируем метрики
+                # Отправляем сигнал (метрики уже логируются через отдельные обработчики)
                 current_epoch = exp_info['trainer'].progress.current_epoch
-                # self.metrics_tracker.log_training_metrics(current_epoch, metrics)
-                
-                # Отправляем сигнал
                 self.training_progress.emit(current_epoch, metrics)
                 break
+    
+    def _on_training_metrics_updated(self, epoch: int, metrics: Dict):
+        """Обработчик обновления метрик обучения"""
+        # Получаем experiment_id из sender (progress объекта)
+        sender = self.sender()
+        exp_id = None
+        
+        if sender and hasattr(sender, 'experiment_id'):
+            exp_id = sender.experiment_id
+        else:
+            # Fallback: находим соответствующий эксперимент по sender
+            for eid, exp_info in self.active_experiments.items():
+                if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == sender:
+                    exp_id = eid
+                    break
+        
+        # Логируем метрики обучения в базу данных
+        if exp_id and metrics:
+            self.metrics_tracker.log_training_metrics(epoch, metrics, experiment_id=exp_id)
+    
+    def _on_validation_metrics_updated(self, epoch: int, metrics: Dict):
+        """Обработчик обновления метрик валидации"""
+        # Получаем experiment_id из sender (progress объекта)
+        sender = self.sender()
+        exp_id = None
+        
+        if sender and hasattr(sender, 'experiment_id'):
+            exp_id = sender.experiment_id
+        else:
+            # Fallback: находим соответствующий эксперимент по sender
+            for eid, exp_info in self.active_experiments.items():
+                if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == sender:
+                    exp_id = eid
+                    break
+        
+        # Логируем метрики валидации в базу данных
+        if exp_id and metrics:
+            self.metrics_tracker.log_validation_metrics(epoch, metrics, experiment_id=exp_id)
     
     def _on_training_finished(self, success: bool, message: str):
         """Обработчик завершения обучения"""
@@ -405,6 +453,14 @@ class YOLOTrainingManager(QObject):
                 # Отправляем сигнал
                 self.training_completed.emit(exp_id, success, message)
                 break
+    
+    def _on_status_updated(self, text: str):
+        """Пробрасывает статусные сообщения в UI"""
+        try:
+            # Можно при желании префиксовать именем эксперимента/типа
+            self.status_message.emit(text)
+        except Exception:
+            pass
     
     def _on_metrics_tracked(self, metrics_data: Dict):
         """Обработчик отслеживания метрик"""

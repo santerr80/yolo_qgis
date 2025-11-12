@@ -10,6 +10,7 @@ import os
 
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
+from qgis.PyQt.QtCore import Qt
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
 
@@ -409,6 +410,8 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.training_manager.training_progress.connect(self._on_training_progress)
             self.training_manager.training_completed.connect(self._on_training_completed)
             self.training_manager.validation_completed.connect(self._on_validation_completed)
+            # Подключаем статусные сообщения тренировки
+            self.training_manager.status_message.connect(self._on_status_message)
             
             # Обновляем список экспериментов
             self._refresh_experiments_list()
@@ -863,6 +866,27 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         
         self.textEditTrainingLog.append(f"Тренировка завершена: {message}")
         self._refresh_experiments_list()
+        
+        # Автоматически выбираем завершенный эксперимент и обновляем информацию
+        if experiment_id and hasattr(self, 'listWidgetExperiments'):
+            # Находим элемент в списке с этим experiment_id
+            for i in range(self.listWidgetExperiments.count()):
+                item = self.listWidgetExperiments.item(i)
+                if item and item.data(Qt.UserRole) == experiment_id:
+                    self.listWidgetExperiments.setCurrentItem(item)
+                    # Вызываем обработчик выбора эксперимента
+                    self._on_experiment_selected()
+                    break
+    
+    def _on_status_message(self, text: str):
+        """Выводит произвольные статусные сообщения из тренера"""
+        try:
+            if hasattr(self, 'labelTrainingStatus'):
+                self.labelTrainingStatus.setText(text)
+            if hasattr(self, 'textEditTrainingLog'):
+                self.textEditTrainingLog.append(text)
+        except Exception as e:
+            print(f"Ошибка вывода статусного сообщения: {e}")
     
     def _on_validation_completed(self, experiment_id, results):
         """Обработчик завершения валидации"""
@@ -878,7 +902,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             print(f"Ошибка обработки результатов валидации: {e}")
     
     def _update_metrics_table(self, epoch, metrics):
-        """Обновляет таблицу метрик"""
+        """Обновляет таблицу метрик (добавляет новую строку)"""
         try:
             # Добавляем новую строку в таблицу
             row_count = self.tableWidgetMetrics.rowCount()
@@ -897,6 +921,90 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             
         except Exception as e:
             print(f"Ошибка обновления таблицы метрик: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _load_metrics_from_database(self, experiment_id):
+        """Загружает метрики из базы данных и заполняет таблицу"""
+        try:
+            if not self.training_manager or not experiment_id:
+                return
+            
+            # Очищаем таблицу
+            self.tableWidgetMetrics.setRowCount(0)
+            
+            # Получаем метрики из базы данных
+            metrics_data = self.training_manager.metrics_tracker.database.get_experiment_metrics(experiment_id)
+            
+            if not metrics_data:
+                print(f"Метрики для эксперимента {experiment_id} не найдены в базе данных")
+                return
+            
+            # Группируем метрики по эпохам
+            epochs_data = {}
+            for metric in metrics_data:
+                epoch = metric['epoch']
+                phase = metric['phase']
+                metric_name = metric['metric_name']
+                metric_value = metric['metric_value']
+                
+                if epoch not in epochs_data:
+                    epochs_data[epoch] = {'training': {}, 'validation': {}}
+                
+                epochs_data[epoch][phase][metric_name] = metric_value
+            
+            # Заполняем таблицу метриками по эпохам
+            for epoch in sorted(epochs_data.keys()):
+                epoch_data = epochs_data[epoch]
+                validation_metrics = epoch_data.get('validation', {})
+                training_metrics = epoch_data.get('training', {})
+                
+                # Формируем строку метрик для таблицы
+                # Извлекаем loss из training метрик (может быть под разными именами)
+                loss_value = 0.0
+                for loss_key in ['loss', 'train_loss', 'box_loss', 'cls_loss', 'dfl_loss']:
+                    if loss_key in training_metrics:
+                        # Если есть общий loss, используем его, иначе суммируем компоненты
+                        if loss_key == 'loss':
+                            loss_value = training_metrics[loss_key]
+                            break
+                        else:
+                            loss_value += training_metrics.get(loss_key, 0.0)
+                
+                # Если не нашли loss, пробуем найти любую метрику с loss в названии
+                if loss_value == 0.0:
+                    for key, value in training_metrics.items():
+                        if 'loss' in key.lower():
+                            loss_value = value
+                            break
+                
+                row_metrics = {
+                    'mAP50': validation_metrics.get('mAP50', 0.0),
+                    'mAP50-95': validation_metrics.get('mAP50-95', validation_metrics.get('mAP50_95', validation_metrics.get('map', 0.0))),
+                    'precision': validation_metrics.get('precision', 0.0),
+                    'recall': validation_metrics.get('recall', 0.0),
+                    'loss': loss_value
+                }
+                
+                # Добавляем строку в таблицу
+                row_count = self.tableWidgetMetrics.rowCount()
+                self.tableWidgetMetrics.insertRow(row_count)
+                
+                self.tableWidgetMetrics.setItem(row_count, 0, QtWidgets.QTableWidgetItem(str(epoch)))
+                self.tableWidgetMetrics.setItem(row_count, 1, QtWidgets.QTableWidgetItem(f"{row_metrics['mAP50']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 2, QtWidgets.QTableWidgetItem(f"{row_metrics['mAP50-95']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 3, QtWidgets.QTableWidgetItem(f"{row_metrics['precision']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 4, QtWidgets.QTableWidgetItem(f"{row_metrics['recall']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 5, QtWidgets.QTableWidgetItem(f"{row_metrics['loss']:.4f}"))
+            
+            # Прокручиваем к последней строке
+            if self.tableWidgetMetrics.rowCount() > 0:
+                self.tableWidgetMetrics.scrollToBottom()
+            
+        except Exception as e:
+            print(f"Ошибка загрузки метрик из базы данных: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _refresh_experiments_list(self):
         """Обновляет список экспериментов"""
@@ -904,17 +1012,34 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if not self.training_manager:
                 return
             
+            # Сохраняем текущий выбранный эксперимент
+            current_item = self.listWidgetExperiments.currentItem()
+            current_experiment_id = current_item.data(Qt.UserRole) if current_item else None
+            
             experiments = self.training_manager.get_all_experiments()
             self.listWidgetExperiments.clear()
             
-            for exp in experiments:
+            selected_index = None
+            for i, exp in enumerate(experiments):
                 item_text = f"{exp.get('name', 'Unknown')} - {exp.get('status', 'Unknown')}"
                 item = QtWidgets.QListWidgetItem(item_text)
-                item.setData(QtWidgets.Qt.UserRole, exp.get('id', ''))
+                exp_id = exp.get('id', '')
+                item.setData(Qt.UserRole, exp_id)
                 self.listWidgetExperiments.addItem(item)
+                
+                # Восстанавливаем выбор, если это был выбранный эксперимент
+                if current_experiment_id and exp_id == current_experiment_id:
+                    selected_index = i
+            
+            # Восстанавливаем выбор и загружаем метрики
+            if selected_index is not None:
+                self.listWidgetExperiments.setCurrentRow(selected_index)
+                self._on_experiment_selected()
                 
         except Exception as e:
             print(f"Ошибка обновления списка экспериментов: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _on_experiment_selected(self):
         """Обработчик выбора эксперимента"""
@@ -923,7 +1048,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if not current_item:
                 return
             
-            experiment_id = current_item.data(QtWidgets.Qt.UserRole)
+            experiment_id = current_item.data(Qt.UserRole)
             if not experiment_id:
                 return
             
@@ -934,8 +1059,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             info_text = self._format_experiment_info(summary)
             self.textEditExperimentInfo.setPlainText(info_text)
             
+            # Загружаем и отображаем метрики из базы данных
+            self._load_metrics_from_database(experiment_id)
+            
         except Exception as e:
             print(f"Ошибка выбора эксперимента: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _format_experiment_info(self, summary):
         """Форматирует информацию об эксперименте"""
@@ -977,15 +1107,135 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
     # Заглушки для остальных методов
     def _start_validation(self):
         """Запускает валидацию модели"""
-        QtWidgets.QMessageBox.information(self, "Информация", "Функция валидации будет реализована")
+        try:
+            if not self.training_manager:
+                QtWidgets.QMessageBox.warning(self, "Ошибка", "Компоненты тренировки не инициализированы")
+                return
+            
+            # Получаем пути модели и датасета из вкладки валидации
+            model_path = ""
+            dataset_path = ""
+            try:
+                if hasattr(self, 'fileWidgetValidationModel'):
+                    model_path = self.fileWidgetValidationModel.filePath()
+                if hasattr(self, 'fileWidgetValidationDataset'):
+                    dataset_path = self.fileWidgetValidationDataset.filePath()
+            except Exception:
+                pass
+            
+            if not model_path:
+                QtWidgets.QMessageBox.warning(self, "Ошибка", "Укажите путь к модели (*.pt)")
+                return
+            if not dataset_path:
+                QtWidgets.QMessageBox.warning(self, "Ошибка", "Укажите путь к датасету")
+                return
+            
+            # Определяем тип задачи из UI
+            task_type = self.comboBoxTaskType.currentText() if hasattr(self, 'comboBoxTaskType') else "Детекция"
+            task = "detect" if "Детекция" in task_type else "segment"
+            
+            # Запускаем валидацию (комплексную по умолчанию)
+            results = self.training_manager.validate_model(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                task=task,
+                experiment_id=None,
+                comprehensive=True
+            )
+            
+            if 'error' in results:
+                QtWidgets.QMessageBox.critical(self, "Ошибка валидации", results['error'])
+                return
+            
+            # Отобразить результаты
+            self._display_validation_results(results)
+            
+            # Предложить сохранить результаты
+            if hasattr(self, 'checkBoxSaveValidation') and self.checkBoxSaveValidation.isChecked():
+                self._export_validation_results(results)
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка запуска валидации: {e}")
     
     def _compare_models(self):
         """Сравнивает модели"""
-        QtWidgets.QMessageBox.information(self, "Информация", "Функция сравнения моделей будет реализована")
+        try:
+            # Запросить у пользователя список моделей для сравнения
+            models_text, ok = QtWidgets.QInputDialog.getMultiLineText(
+                self,
+                "Сравнение моделей",
+                "Укажите пути к моделям (по одной на строке):"
+            )
+            if not ok or not models_text.strip():
+                return
+            
+            model_paths = [p.strip() for p in models_text.splitlines() if p.strip()]
+            if len(model_paths) < 2:
+                QtWidgets.QMessageBox.warning(self, "Предупреждение", "Нужно указать минимум две модели")
+                return
+            
+            dataset_path = ""
+            try:
+                if hasattr(self, 'fileWidgetValidationDataset'):
+                    dataset_path = self.fileWidgetValidationDataset.filePath()
+            except Exception:
+                pass
+            if not dataset_path:
+                QtWidgets.QMessageBox.warning(self, "Ошибка", "Укажите путь к датасету")
+                return
+            
+            task_type = self.comboBoxTaskType.currentText() if hasattr(self, 'comboBoxTaskType') else "Детекция"
+            task = "detect" if "Детекция" in task_type else "segment"
+            
+            models = [{'path': p, 'name': os.path.splitext(os.path.basename(p))[0]} for p in model_paths]
+            comparison = self.training_manager.compare_models(models=models, dataset_path=dataset_path, task=task)
+            
+            if 'error' in comparison:
+                QtWidgets.QMessageBox.critical(self, "Ошибка сравнения", comparison['error'])
+                return
+            
+            # Краткий вывод сравнения
+            summary_lines = ["=== Сравнение моделей ==="]
+            best = comparison.get('comparison_metrics', {})
+            for key, data in best.items():
+                summary_lines.append(f"{key}: {data.get('model', 'N/A')} ({data.get('value', 0):.4f})")
+            self.textEditValidationLog.append("\n".join(summary_lines))
+            QtWidgets.QMessageBox.information(self, "Сравнение завершено", "\n".join(summary_lines))
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка сравнения моделей: {e}")
     
-    def _export_validation_results(self):
+    def _export_validation_results(self, results: dict = None):
         """Экспортирует результаты валидации"""
-        QtWidgets.QMessageBox.information(self, "Информация", "Функция экспорта результатов будет реализована")
+        try:
+            # Если результаты не переданы, пробуем собрать из таблицы
+            data = results if isinstance(results, dict) else None
+            if data is None:
+                # Собираем из виджета (минимально)
+                metrics = {}
+                rows = self.tableWidgetValidationResults.rowCount() if hasattr(self, 'tableWidgetValidationResults') else 0
+                for i in range(rows):
+                    name_item = self.tableWidgetValidationResults.item(i, 0)
+                    val_item = self.tableWidgetValidationResults.item(i, 1)
+                    if name_item and val_item:
+                        try:
+                            metrics[name_item.text()] = float(val_item.text())
+                        except Exception:
+                            metrics[name_item.text()] = val_item.text()
+                data = {'metrics': metrics, 'timestamp': datetime.now().isoformat()}
+            
+            # Диалог выбора пути
+            default_name = f"validation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Сохранить результаты валидации", default_name, "JSON (*.json)"
+            )
+            if not out_path:
+                return
+            
+            with open(out_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            QtWidgets.QMessageBox.information(self, "Успех", f"Результаты сохранены в:\n{out_path}")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка экспорта результатов: {e}")
     
     def _delete_experiment(self):
         """Удаляет выбранный эксперимент"""

@@ -9,6 +9,7 @@ import csv
 import sqlite3
 import threading
 import time
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional, Union, Any
 from pathlib import Path
@@ -231,6 +232,41 @@ class MetricsDatabase:
             print(f"Ошибка получения метрик эксперимента: {e}")
             return []
     
+    def get_experiment_info(self, experiment_id: str) -> Optional[Dict]:
+        """Получает информацию об эксперименте по ID"""
+        try:
+            with self.lock:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT id, name, task, model_type, dataset_path, config, status, created_at, completed_at
+                    FROM experiments
+                    WHERE id = ?
+                ''', (experiment_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    result = {
+                        'id': row[0],
+                        'name': row[1],
+                        'task': row[2],
+                        'model_type': row[3],
+                        'dataset_path': row[4],
+                        'config': json.loads(row[5]) if row[5] else {},
+                        'status': row[6],
+                        'created_at': row[7],
+                        'completed_at': row[8]
+                    }
+                    conn.close()
+                    return result
+                
+                conn.close()
+                return None
+        except Exception as e:
+            print(f"Ошибка получения информации об эксперименте: {e}")
+            return None
+    
     def get_experiments_list(self) -> List[Dict]:
         """Получает список всех экспериментов"""
         try:
@@ -293,15 +329,18 @@ class MetricsTracker(QObject):
         
         return success
     
-    def log_training_metrics(self, epoch: int, metrics: Dict):
+    def log_training_metrics(self, epoch: int, metrics: Dict, experiment_id: str = None):
         """Логирует метрики обучения"""
-        if not self.current_experiment:
+        # Используем переданный experiment_id или текущий эксперимент
+        exp_id = experiment_id or self.current_experiment
+        if not exp_id:
+            print("Предупреждение: experiment_id не установлен, метрики не будут сохранены")
             return
         
         # Логируем в файлы
         
         # Логируем в базу данных
-        self.database.log_metrics(self.current_experiment, epoch, 'training', metrics)
+        self.database.log_metrics(exp_id, epoch, 'training', metrics)
         
         # Сохраняем в историю
         self.metrics_history.append({
@@ -313,21 +352,24 @@ class MetricsTracker(QObject):
         
         # Отправляем сигнал
         self.metrics_updated.emit({
-            'experiment_id': self.current_experiment,
+            'experiment_id': exp_id,
             'epoch': epoch,
             'phase': 'training',
             'metrics': metrics
         })
     
-    def log_validation_metrics(self, epoch: int, metrics: Dict):
+    def log_validation_metrics(self, epoch: int, metrics: Dict, experiment_id: str = None):
         """Логирует метрики валидации"""
-        if not self.current_experiment:
+        # Используем переданный experiment_id или текущий эксперимент
+        exp_id = experiment_id or self.current_experiment
+        if not exp_id:
+            print("Предупреждение: experiment_id не установлен, метрики не будут сохранены")
             return
         
         # Логируем в файлы
         
         # Логируем в базу данных
-        self.database.log_metrics(self.current_experiment, epoch, 'validation', metrics)
+        self.database.log_metrics(exp_id, epoch, 'validation', metrics)
         
         # Сохраняем в историю
         self.metrics_history.append({
@@ -339,7 +381,7 @@ class MetricsTracker(QObject):
         
         # Отправляем сигнал
         self.metrics_updated.emit({
-            'experiment_id': self.current_experiment,
+            'experiment_id': exp_id,
             'epoch': epoch,
             'phase': 'validation',
             'metrics': metrics
@@ -370,11 +412,24 @@ class MetricsTracker(QObject):
         if not experiment_id:
             return {}
         
+        # Получаем информацию об эксперименте из базы данных
+        experiment_info = self.database.get_experiment_info(experiment_id)
+        if not experiment_info:
+            return {}
+        
         # Получаем метрики из базы данных
         metrics = self.database.get_experiment_metrics(experiment_id)
         
         # Анализируем метрики
         summary = {
+            'id': experiment_info.get('id', experiment_id),
+            'name': experiment_info.get('name', 'N/A'),
+            'task': experiment_info.get('task', 'N/A'),
+            'model_type': experiment_info.get('model_type', 'N/A'),
+            'status': experiment_info.get('status', 'N/A'),
+            'created_at': experiment_info.get('created_at', 'N/A'),
+            'completed_at': experiment_info.get('completed_at', 'N/A'),
+            'config': experiment_info.get('config', {}),
             'experiment_id': experiment_id,
             'total_epochs': 0,
             'best_metrics': {},
@@ -478,6 +533,8 @@ class MetricsVisualizer:
             try:
                 import matplotlib.pyplot as plt
                 import seaborn as sns
+                # Suppress matplotlib font manager DEBUG messages
+                logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
             except ImportError:
                 print("matplotlib или seaborn не установлены. Графики не будут созданы.")
                 return False
@@ -537,6 +594,8 @@ class MetricsVisualizer:
         try:
             try:
                 import matplotlib.pyplot as plt
+                # Suppress matplotlib font manager DEBUG messages
+                logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
             except ImportError:
                 return
             
@@ -579,6 +638,8 @@ class MetricsVisualizer:
         try:
             try:
                 import matplotlib.pyplot as plt
+                # Suppress matplotlib font manager DEBUG messages
+                logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
             except ImportError:
                 print("matplotlib не установлен. График не будет создан.")
                 return False

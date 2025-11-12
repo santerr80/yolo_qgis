@@ -5,6 +5,7 @@
 
 import os
 import json
+import logging
 from typing import Dict, List, Tuple, Optional, Union
 from pathlib import Path
 from datetime import datetime
@@ -30,7 +31,14 @@ except ImportError:
     np = None
 
 try:
+    # Используем неинтерактивный backend, чтобы не открывались окна
+    import os as _os_for_backend
+    _os_for_backend.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    import matplotlib
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    # Suppress matplotlib font manager DEBUG messages
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 except ImportError:
     plt = None
 
@@ -205,7 +213,10 @@ class AdvancedValidator:
                     conf=conf,
                     iou=0.45,
                     save_json=True,
-                    verbose=False
+                    verbose=False,
+                    plots=False,
+                    show=False,
+                    workers=0
                 )
                 
                 results[conf] = {
@@ -238,7 +249,10 @@ class AdvancedValidator:
                     conf=0.25,
                     iou=iou,
                     save_json=True,
-                    verbose=False
+                    verbose=False,
+                    plots=False,
+                    show=False,
+                    workers=0
                 )
                 
                 results[iou] = {
@@ -268,7 +282,10 @@ class AdvancedValidator:
                 conf=0.25,
                 iou=0.45,
                 save_json=True,
-                verbose=False
+                verbose=False,
+                plots=False,
+                show=False,
+                workers=0
             )
             
             class_analysis = {}
