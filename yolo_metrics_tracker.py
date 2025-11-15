@@ -10,12 +10,16 @@ import sqlite3
 import threading
 import time
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional, Union, Any
 from pathlib import Path
 
 # Fix for NumPy stderr issue in QGIS environment
 from . import stderr_fix
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 # Опциональные импорты с обработкой ошибок
 try:
@@ -25,7 +29,7 @@ try:
         version_parts = np.__version__.split('.')
         major_version = int(version_parts[0])
         if major_version >= 2:
-            print(f"Предупреждение: numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
+            logger.warning(f"numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
 except ImportError:
     np = None
 
@@ -57,232 +61,258 @@ class MetricsDatabase:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or 'yolo_metrics.db'
         self.lock = threading.Lock()
+        self._connection = None
+        self._batch_buffer = []
+        self._batch_size = 100  # Размер батча для вставки метрик
         self.init_database()
+    
+    @contextmanager
+    def _get_connection(self):
+        """Контекстный менеджер для работы с БД"""
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row  # Для доступа по имени колонок
+            yield conn
+            conn.commit()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Ошибка работы с БД: {e}", exc_info=True)
+            raise
+        finally:
+            if conn:
+                conn.close()
     
     def init_database(self):
         """Инициализирует базу данных"""
         with self.lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Создаем таблицу для метрик обучения
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS training_metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    experiment_id TEXT,
-                    epoch INTEGER,
-                    phase TEXT,
-                    metric_name TEXT,
-                    metric_value REAL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Создаем таблицу для экспериментов
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS experiments (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    task TEXT,
-                    model_type TEXT,
-                    dataset_path TEXT,
-                    config TEXT,
-                    status TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    completed_at DATETIME
-                )
-            ''')
-            
-            # Создаем таблицу для валидации
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS validation_results (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    experiment_id TEXT,
-                    model_path TEXT,
-                    dataset_path TEXT,
-                    mAP50 REAL,
-                    mAP50_95 REAL,
-                    precision REAL,
-                    recall REAL,
-                    f1_score REAL,
-                    timestamp TEXT,
-                    FOREIGN KEY (experiment_id) REFERENCES experiments (id)
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Создаем таблицу для метрик обучения
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS training_metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        experiment_id TEXT,
+                        epoch INTEGER,
+                        phase TEXT,
+                        metric_name TEXT,
+                        metric_value REAL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Создаем таблицу для экспериментов
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS experiments (
+                        id TEXT PRIMARY KEY,
+                        name TEXT,
+                        task TEXT,
+                        model_type TEXT,
+                        dataset_path TEXT,
+                        config TEXT,
+                        status TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        completed_at DATETIME
+                    )
+                ''')
+                
+                # Создаем таблицу для валидации
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS validation_results (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        experiment_id TEXT,
+                        model_path TEXT,
+                        dataset_path TEXT,
+                        mAP50 REAL,
+                        mAP50_95 REAL,
+                        precision REAL,
+                        recall REAL,
+                        f1_score REAL,
+                        timestamp TEXT,
+                        FOREIGN KEY (experiment_id) REFERENCES experiments (id)
+                    )
+                ''')
+                
+                # Создаем индексы для оптимизации запросов
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_training_metrics_experiment 
+                    ON training_metrics(experiment_id, epoch)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_training_metrics_phase 
+                    ON training_metrics(phase, metric_name)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_experiments_status 
+                    ON experiments(status, created_at)
+                ''')
+                
+                conn.commit()
     
     def create_experiment(self, experiment_id: str, name: str, task: str, 
                          model_type: str, dataset_path: str, config: Dict) -> bool:
         """Создает новый эксперимент"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    INSERT OR REPLACE INTO experiments 
-                    (id, name, task, model_type, dataset_path, config, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (experiment_id, name, task, model_type, dataset_path, 
-                     json.dumps(config), 'running'))
-                
-                conn.commit()
-                conn.close()
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO experiments 
+                        (id, name, task, model_type, dataset_path, config, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (experiment_id, name, task, model_type, dataset_path, 
+                         json.dumps(config), 'running'))
                 return True
         except Exception as e:
-            print(f"Ошибка создания эксперимента: {e}")
+            logger.error(f"Ошибка создания эксперимента: {e}", exc_info=True)
             return False
     
     def update_experiment_status(self, experiment_id: str, status: str):
         """Обновляет статус эксперимента"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                completed_at = datetime.now().isoformat() if status == 'completed' else None
-                
-                cursor.execute('''
-                    UPDATE experiments 
-                    SET status = ?, completed_at = ?
-                    WHERE id = ?
-                ''', (status, completed_at, experiment_id))
-                
-                conn.commit()
-                conn.close()
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    completed_at = datetime.now().isoformat() if status == 'completed' else None
+                    cursor.execute('''
+                        UPDATE experiments 
+                        SET status = ?, completed_at = ?
+                        WHERE id = ?
+                    ''', (status, completed_at, experiment_id))
         except Exception as e:
-            print(f"Ошибка обновления статуса эксперимента: {e}")
+            logger.error(f"Ошибка обновления статуса эксперимента: {e}", exc_info=True)
     
     def log_metrics(self, experiment_id: str, epoch: int, phase: str, metrics: Dict):
-        """Логирует метрики в базу данных"""
+        """Логирует метрики в базу данных (с batch вставкой)"""
         try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            
+            # Добавляем метрики в буфер
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                timestamp = datetime.now(timezone.utc).isoformat()
-                
                 for metric_name, metric_value in metrics.items():
-                    cursor.execute('''
-                        INSERT INTO training_metrics 
-                        (timestamp, experiment_id, epoch, phase, metric_name, metric_value)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (timestamp, experiment_id, epoch, phase, metric_name, metric_value))
+                    self._batch_buffer.append((
+                        timestamp, experiment_id, epoch, phase, metric_name, metric_value
+                    ))
                 
-                conn.commit()
-                conn.close()
+                # Если буфер заполнен, выполняем batch insert
+                if len(self._batch_buffer) >= self._batch_size:
+                    self._flush_metrics_buffer()
         except Exception as e:
-            print(f"Ошибка логирования метрик: {e}")
+            logger.error(f"Ошибка логирования метрик: {e}", exc_info=True)
+    
+    def _flush_metrics_buffer(self):
+        """Выполняет batch insert метрик из буфера"""
+        if not self._batch_buffer:
+            return
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.executemany('''
+                    INSERT INTO training_metrics 
+                    (timestamp, experiment_id, epoch, phase, metric_name, metric_value)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', self._batch_buffer)
+                self._batch_buffer.clear()
+        except Exception as e:
+            logger.error(f"Ошибка batch вставки метрик: {e}", exc_info=True)
+            self._batch_buffer.clear()  # Очищаем буфер при ошибке
+    
+    def flush_metrics(self):
+        """Принудительно сохраняет все метрики из буфера"""
+        with self.lock:
+            self._flush_metrics_buffer()
     
     def log_validation_results(self, experiment_id: str, model_path: str, 
                              dataset_path: str, results: Dict):
         """Логирует результаты валидации"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                timestamp = datetime.now(timezone.utc).isoformat()
-                
-                cursor.execute('''
-                    INSERT INTO validation_results 
-                    (experiment_id, model_path, dataset_path, mAP50, mAP50_95, 
-                     precision, recall, f1_score, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (experiment_id, model_path, dataset_path,
-                     results.get('mAP50', 0.0), results.get('mAP50-95', 0.0),
-                     results.get('precision', 0.0), results.get('recall', 0.0),
-                     results.get('f1_score', 0.0), timestamp))
-                
-                conn.commit()
-                conn.close()
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    cursor.execute('''
+                        INSERT INTO validation_results 
+                        (experiment_id, model_path, dataset_path, mAP50, mAP50_95, 
+                         precision, recall, f1_score, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (experiment_id, model_path, dataset_path,
+                         results.get('mAP50', 0.0), results.get('mAP50-95', 0.0),
+                         results.get('precision', 0.0), results.get('recall', 0.0),
+                         results.get('f1_score', 0.0), timestamp))
         except Exception as e:
-            print(f"Ошибка логирования результатов валидации: {e}")
+            logger.error(f"Ошибка логирования результатов валидации: {e}", exc_info=True)
     
     def get_experiment_metrics(self, experiment_id: str) -> List[Dict]:
         """Получает метрики эксперимента"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    SELECT epoch, phase, metric_name, metric_value, timestamp
-                    FROM training_metrics
-                    WHERE experiment_id = ?
-                    ORDER BY epoch, timestamp
-                ''', (experiment_id,))
-                
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT epoch, phase, metric_name, metric_value, timestamp
+                        FROM training_metrics
+                        WHERE experiment_id = ?
+                        ORDER BY epoch, timestamp
+                    ''', (experiment_id,))
+                    
+                    return [{
                         'epoch': row[0],
                         'phase': row[1],
                         'metric_name': row[2],
                         'metric_value': row[3],
                         'timestamp': row[4]
-                    })
-                
-                conn.close()
-                return results
+                    } for row in cursor.fetchall()]
         except Exception as e:
-            print(f"Ошибка получения метрик эксперимента: {e}")
+            logger.error(f"Ошибка получения метрик эксперимента: {e}", exc_info=True)
             return []
     
     def get_experiment_info(self, experiment_id: str) -> Optional[Dict]:
         """Получает информацию об эксперименте по ID"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    SELECT id, name, task, model_type, dataset_path, config, status, created_at, completed_at
-                    FROM experiments
-                    WHERE id = ?
-                ''', (experiment_id,))
-                
-                row = cursor.fetchone()
-                if row:
-                    result = {
-                        'id': row[0],
-                        'name': row[1],
-                        'task': row[2],
-                        'model_type': row[3],
-                        'dataset_path': row[4],
-                        'config': json.loads(row[5]) if row[5] else {},
-                        'status': row[6],
-                        'created_at': row[7],
-                        'completed_at': row[8]
-                    }
-                    conn.close()
-                    return result
-                
-                conn.close()
-                return None
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT id, name, task, model_type, dataset_path, config, status, created_at, completed_at
+                        FROM experiments
+                        WHERE id = ?
+                    ''', (experiment_id,))
+                    
+                    row = cursor.fetchone()
+                    if row:
+                        return {
+                            'id': row[0],
+                            'name': row[1],
+                            'task': row[2],
+                            'model_type': row[3],
+                            'dataset_path': row[4],
+                            'config': json.loads(row[5]) if row[5] else {},
+                            'status': row[6],
+                            'created_at': row[7],
+                            'completed_at': row[8]
+                        }
+                    return None
         except Exception as e:
-            print(f"Ошибка получения информации об эксперименте: {e}")
+            logger.error(f"Ошибка получения информации об эксперименте: {e}", exc_info=True)
             return None
     
     def get_experiments_list(self) -> List[Dict]:
         """Получает список всех экспериментов"""
         try:
             with self.lock:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    SELECT id, name, task, model_type, status, created_at, completed_at
-                    FROM experiments
-                    ORDER BY created_at DESC
-                ''')
-                
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT id, name, task, model_type, status, created_at, completed_at
+                        FROM experiments
+                        ORDER BY created_at DESC
+                    ''')
+                    
+                    return [{
                         'id': row[0],
                         'name': row[1],
                         'task': row[2],
@@ -290,12 +320,9 @@ class MetricsDatabase:
                         'status': row[4],
                         'created_at': row[5],
                         'completed_at': row[6]
-                    })
-                
-                conn.close()
-                return results
+                    } for row in cursor.fetchall()]
         except Exception as e:
-            print(f"Ошибка получения списка экспериментов: {e}")
+            logger.error(f"Ошибка получения списка экспериментов: {e}", exc_info=True)
             return []
 
 
@@ -334,7 +361,7 @@ class MetricsTracker(QObject):
         # Используем переданный experiment_id или текущий эксперимент
         exp_id = experiment_id or self.current_experiment
         if not exp_id:
-            print("Предупреждение: experiment_id не установлен, метрики не будут сохранены")
+            logger.warning("experiment_id не установлен, метрики не будут сохранены")
             return
         
         # Логируем в файлы
@@ -363,7 +390,7 @@ class MetricsTracker(QObject):
         # Используем переданный experiment_id или текущий эксперимент
         exp_id = experiment_id or self.current_experiment
         if not exp_id:
-            print("Предупреждение: experiment_id не установлен, метрики не будут сохранены")
+            logger.warning("experiment_id не установлен, метрики не будут сохранены")
             return
         
         # Логируем в файлы
@@ -391,6 +418,9 @@ class MetricsTracker(QObject):
         """Логирует финальные результаты валидации"""
         if not self.current_experiment:
             return
+        
+        # Принудительно сохраняем все метрики из буфера перед завершением
+        self.database.flush_metrics()
         
         # Логируем в базу данных
         self.database.log_validation_results(
@@ -484,8 +514,9 @@ class MetricsTracker(QObject):
     
     def _periodic_save(self):
         """Периодическое сохранение данных"""
-        # Здесь можно добавить дополнительную логику сохранения
-        pass
+        # Принудительно сохраняем метрики из буфера
+        if self.database:
+            self.database.flush_metrics()
     
     def export_metrics(self, experiment_id: str, output_path: str, format: str = 'json'):
         """Экспортирует метрики в файл"""
@@ -517,7 +548,7 @@ class MetricsTracker(QObject):
             
             return True
         except Exception as e:
-            print(f"Ошибка экспорта метрик: {e}")
+            logger.error(f"Ошибка экспорта метрик: {e}", exc_info=True)
             return False
 
 
@@ -536,7 +567,7 @@ class MetricsVisualizer:
                 # Suppress matplotlib font manager DEBUG messages
                 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
             except ImportError:
-                print("matplotlib или seaborn не установлены. Графики не будут созданы.")
+                logger.warning("matplotlib или seaborn не установлены. Графики не будут созданы.")
                 return False
             
             summary = self.tracker.get_experiment_summary(experiment_id)
@@ -586,7 +617,7 @@ class MetricsVisualizer:
             return True
             
         except Exception as e:
-            print(f"Ошибка создания графиков: {e}")
+            logger.error(f"Ошибка создания графиков: {e}", exc_info=True)
             return False
     
     def _create_summary_plot(self, summary: Dict, output_dir: str):
@@ -631,7 +662,7 @@ class MetricsVisualizer:
             plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания сводного графика: {e}")
+            logger.error(f"Ошибка создания сводного графика: {e}", exc_info=True)
     
     def create_comparison_plot(self, experiment_ids: List[str], output_path: str):
         """Создает график сравнения экспериментов"""
@@ -641,11 +672,11 @@ class MetricsVisualizer:
                 # Suppress matplotlib font manager DEBUG messages
                 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
             except ImportError:
-                print("matplotlib не установлен. График не будет создан.")
+                logger.warning("matplotlib не установлен. График не будет создан.")
                 return False
             
             if np is None:
-                print("numpy не установлен. График не будет создан.")
+                logger.warning("numpy не установлен. График не будет создан.")
                 return False
             
             plt.figure(figsize=(14, 10))
@@ -674,5 +705,5 @@ class MetricsVisualizer:
             return True
             
         except Exception as e:
-            print(f"Ошибка создания графика сравнения: {e}")
+            logger.error(f"Ошибка создания графика сравнения: {e}", exc_info=True)
             return False

@@ -13,6 +13,9 @@ from datetime import datetime
 # Fix for NumPy stderr issue in QGIS environment
 from . import stderr_fix
 
+# Настройка логирования
+logger = logging.getLogger(__name__)
+
 # Опциональные импорты с обработкой ошибок
 try:
     import yaml
@@ -26,7 +29,7 @@ try:
         version_parts = np.__version__.split('.')
         major_version = int(version_parts[0])
         if major_version >= 2:
-            print(f"Предупреждение: numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
+            logger.warning(f"numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
 except ImportError:
     np = None
 
@@ -384,13 +387,13 @@ class AdvancedValidator:
                 self._plot_confusion_matrix(validation_results['confusion_matrix'], plots_dir)
             
         except Exception as e:
-            print(f"Ошибка создания графиков: {e}")
+            logger.error(f"Ошибка создания графиков: {e}", exc_info=True)
     
     def _plot_confidence_thresholds(self, threshold_data: Dict, plots_dir: str):
         """Создает график метрик по порогам уверенности"""
         try:
             if plt is None:
-                print("matplotlib не установлен. График не будет создан.")
+                logger.warning("matplotlib не установлен. График не будет создан.")
                 return
             
             thresholds = list(threshold_data.keys())
@@ -412,13 +415,13 @@ class AdvancedValidator:
             plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания графика порогов уверенности: {e}")
+            logger.error(f"Ошибка создания графика порогов уверенности: {e}", exc_info=True)
     
     def _plot_iou_thresholds(self, iou_data: Dict, plots_dir: str):
         """Создает график метрик по порогам IoU"""
         try:
             if plt is None:
-                print("matplotlib не установлен. График не будет создан.")
+                logger.warning("matplotlib не установлен. График не будет создан.")
                 return
             
             ious = list(iou_data.keys())
@@ -440,13 +443,13 @@ class AdvancedValidator:
             plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания графика порогов IoU: {e}")
+            logger.error(f"Ошибка создания графика порогов IoU: {e}", exc_info=True)
     
     def _plot_class_performance(self, class_data: Dict, plots_dir: str):
         """Создает график производительности по классам"""
         try:
             if plt is None:
-                print("matplotlib не установлен. График не будет создан.")
+                logger.warning("matplotlib не установлен. График не будет создан.")
                 return
             
             if not class_data:
@@ -477,13 +480,13 @@ class AdvancedValidator:
             plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания графика производительности классов: {e}")
+            logger.error(f"Ошибка создания графика производительности классов: {e}", exc_info=True)
     
     def _plot_confusion_matrix(self, confusion_matrix, plots_dir: str):
         """Создает график матрицы путаницы"""
         try:
             if plt is None or sns is None:
-                print("matplotlib или seaborn не установлены. График не будет создан.")
+                logger.warning("matplotlib или seaborn не установлены. График не будет создан.")
                 return
             
             plt.figure(figsize=(10, 8))
@@ -495,7 +498,7 @@ class AdvancedValidator:
             plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания матрицы путаницы: {e}")
+            logger.error(f"Ошибка создания матрицы путаницы: {e}", exc_info=True)
 
 
 class ModelComparator:
@@ -538,7 +541,7 @@ class ModelComparator:
                 model_path = model_info['path']
                 model_name = model_info.get('name', os.path.basename(model_path))
                 
-                print(f"Валидация модели: {model_name}")
+                logger.info(f"Валидация модели: {model_name}")
                 
                 validation_result = validator.comprehensive_validation(
                     model_path=model_path,
@@ -718,4 +721,4 @@ class ModelComparator:
                 plt.close()
             
         except Exception as e:
-            print(f"Ошибка создания графиков сравнения: {e}")
+            logger.error(f"Ошибка создания графиков сравнения: {e}", exc_info=True)

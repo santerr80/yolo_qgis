@@ -6,6 +6,7 @@
 import os
 import json
 import yaml
+import logging
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from . import stderr_fix
 
 from .yolo_trainer import YOLOTrainer, TrainingProgress, ModelValidator, ModelPredictor
 
+# Настройка логирования
+logger = logging.getLogger(__name__)
+
 
 class DetectionTrainer(YOLOTrainer):
     """Класс для обучения YOLO моделей детекции объектов"""
@@ -21,7 +25,10 @@ class DetectionTrainer(YOLOTrainer):
     def __init__(self):
         super().__init__()
         self.task = 'detect'
-        self.supported_models = ['yolov8n', 'yolov8s', 'yolov8m', 'yolov8l', 'yolov8x']
+        self.supported_models = [
+            'yolov8n', 'yolov8s', 'yolov8m', 'yolov8l', 'yolov8x',
+            'yolov11n', 'yolov11s', 'yolov11m', 'yolov11l', 'yolov11x'
+        ]
     
     def train_detection_model(self,
                             dataset_path: str,
@@ -34,6 +41,7 @@ class DetectionTrainer(YOLOTrainer):
                             pretrained: bool = True,
                             save_dir: str = None,
                             project_name: str = 'detection_training',
+                            resume_training: bool = False,
                             # Специфичные для детекции параметры
                             mosaic: float = 1.0,
                             mixup: float = 0.0,
@@ -119,6 +127,7 @@ class DetectionTrainer(YOLOTrainer):
             pretrained=pretrained,
             save_dir=save_dir,
             project_name=project_name,
+            resume_training=resume_training,
             **detection_params
         )
     
@@ -319,7 +328,7 @@ class DetectionTrainer(YOLOTrainer):
             return exported_model
             
         except Exception as e:
-            print(f"Ошибка экспорта модели: {e}")
+            logger.error(f"Ошибка экспорта модели: {e}", exc_info=True)
             return None
 
 
@@ -346,7 +355,7 @@ class DetectionDatasetAnalyzer:
                 'nc': config.get('nc', len(config.get('names', {})))
             }
         except Exception as e:
-            print(f"Ошибка загрузки информации о датасете: {e}")
+            logger.error(f"Ошибка загрузки информации о датасете: {e}", exc_info=True)
             return {}
     
     def analyze_dataset(self) -> Dict:
@@ -413,7 +422,7 @@ class DetectionDatasetAnalyzer:
                                 class_counts[class_id] = class_counts.get(class_id, 0) + 1
                                 total_objects += 1
             except Exception as e:
-                print(f"Ошибка чтения файла {label_file}: {e}")
+                logger.error(f"Ошибка чтения файла {label_file}: {e}", exc_info=True)
         
         return {
             'image_count': len(image_files),

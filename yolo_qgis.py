@@ -23,6 +23,8 @@
 """
 import sys
 import os
+import logging
+import os.path
 
 # Fix for NumPy stderr issue in QGIS environment
 # This ensures sys.stderr is properly initialized before any NumPy operations
@@ -33,10 +35,12 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
 # Initialize Qt resources from file resources.py
-from .resources import *
+from .resources import *  # noqa: F401, F403
 # Import the code for the dialog
 from .yolo_qgis_dialog import YoloQgisDialog
-import os.path
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 
 class YoloQgis:
@@ -194,7 +198,7 @@ class YoloQgis:
         try:
             # Create the dialog with elements (after translation) and keep reference
             # Only create GUI ONCE in callback, so that it will only load when the plugin is started
-            if self.first_start == True:
+            if self.first_start:
                 self.first_start = False
                 self.dlg = YoloQgisDialog()
             elif not hasattr(self, 'dlg') or self.dlg is None:
@@ -214,6 +218,6 @@ class YoloQgis:
         except Exception as e:
             # Handle any errors that might occur during dialog creation or execution
             from qgis.PyQt.QtWidgets import QMessageBox
-            QMessageBox.critical(None, "Ошибка плагина YOLO QGIS", 
-                               f"Произошла ошибка при запуске плагина:\n{str(e)}")
-            print(f"Ошибка в плагине YOLO QGIS: {e}")
+            error_msg = f"Произошла ошибка при запуске плагина:\n{str(e)}"
+            QMessageBox.critical(None, "Ошибка плагина YOLO QGIS", error_msg)
+            logger.error(f"Ошибка в плагине YOLO QGIS: {e}", exc_info=True)

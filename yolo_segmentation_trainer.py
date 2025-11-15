@@ -5,11 +5,15 @@
 
 import os
 import json
+import logging
 from typing import Dict, List, Tuple, Optional, Union
 from pathlib import Path
 
 # Fix for NumPy stderr issue in QGIS environment
 from . import stderr_fix
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 # Опциональные импорты
 try:
@@ -24,7 +28,7 @@ try:
         version_parts = np.__version__.split('.')
         major_version = int(version_parts[0])
         if major_version >= 2:
-            print(f"Предупреждение: numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
+            logger.warning(f"numpy версии {np.__version__} может быть несовместима с QGIS. Рекомендуется numpy v1.x")
 except ImportError:
     np = None
 
@@ -37,7 +41,10 @@ class SegmentationTrainer(YOLOTrainer):
     def __init__(self):
         super().__init__()
         self.task = 'segment'
-        self.supported_models = ['yolov8n-seg', 'yolov8s-seg', 'yolov8m-seg', 'yolov8l-seg', 'yolov8x-seg']
+        self.supported_models = [
+            'yolov8n-seg', 'yolov8s-seg', 'yolov8m-seg', 'yolov8l-seg', 'yolov8x-seg',
+            'yolov11n-seg', 'yolov11s-seg', 'yolov11m-seg', 'yolov11l-seg', 'yolov11x-seg'
+        ]
     
     def train_segmentation_model(self,
                                dataset_path: str,
@@ -50,6 +57,7 @@ class SegmentationTrainer(YOLOTrainer):
                                pretrained: bool = True,
                                save_dir: str = None,
                                project_name: str = 'segmentation_training',
+                               resume_training: bool = False,
                                # Специфичные для сегментации параметры
                                mask_ratio: int = 4,
                                overlap_mask: bool = True,
@@ -151,6 +159,7 @@ class SegmentationTrainer(YOLOTrainer):
             pretrained=pretrained,
             save_dir=save_dir,
             project_name=project_name,
+            resume_training=resume_training,
             **segmentation_params
         )
     
@@ -235,7 +244,7 @@ class SegmentationTrainer(YOLOTrainer):
                 import cv2
                 from PIL import Image
             except ImportError:
-                print("cv2 или PIL не установлены. Маски не будут сохранены.")
+                logger.warning("cv2 или PIL не установлены. Маски не будут сохранены.")
                 return
             
             masks_dir = os.path.join(output_dir, 'masks')
@@ -257,7 +266,7 @@ class SegmentationTrainer(YOLOTrainer):
                         cv2.imwrite(mask_path, mask * 255)
                         
         except Exception as e:
-            print(f"Ошибка сохранения масок: {e}")
+            logger.error(f"Ошибка сохранения масок: {e}", exc_info=True)
     
     def _create_mask_from_polygon(self, polygon: List[List[float]], image_size: Tuple[int, int]):
         """Создает маску из полигона"""
@@ -265,7 +274,7 @@ class SegmentationTrainer(YOLOTrainer):
             try:
                 import cv2
             except ImportError:
-                print("cv2 не установлен. Маска не будет создана.")
+                logger.warning("cv2 не установлен. Маска не будет создана.")
                 return None
             
             if np is None:
@@ -287,7 +296,7 @@ class SegmentationTrainer(YOLOTrainer):
             return mask
             
         except Exception as e:
-            print(f"Ошибка создания маски: {e}")
+            logger.error(f"Ошибка создания маски: {e}", exc_info=True)
             if np is not None:
                 return np.zeros(image_size, dtype=np.uint8)
             return None
@@ -432,7 +441,7 @@ class SegmentationTrainer(YOLOTrainer):
             return exported_model
             
         except Exception as e:
-            print(f"Ошибка экспорта модели: {e}")
+            logger.error(f"Ошибка экспорта модели: {e}", exc_info=True)
             return None
 
 
@@ -459,7 +468,7 @@ class SegmentationDatasetAnalyzer:
                 'nc': config.get('nc', len(config.get('names', {})))
             }
         except Exception as e:
-            print(f"Ошибка загрузки информации о датасете: {e}")
+            logger.error(f"Ошибка загрузки информации о датасете: {e}", exc_info=True)
             return {}
     
     def analyze_dataset(self) -> Dict:
@@ -534,7 +543,7 @@ class SegmentationDatasetAnalyzer:
                                 segment_complexity.append(segment_points)
                                 total_segments += 1
             except Exception as e:
-                print(f"Ошибка чтения файла {label_file}: {e}")
+                logger.error(f"Ошибка чтения файла {label_file}: {e}", exc_info=True)
         
         # Статистика сегментации
         segmentation_stats = {
@@ -669,7 +678,7 @@ class SegmentationDatasetAnalyzer:
             return metrics
             
         except Exception as e:
-            print(f"Ошибка вычисления метрик сегментации: {e}")
+            logger.error(f"Ошибка вычисления метрик сегментации: {e}", exc_info=True)
             return {'error': str(e)}
     
     def _calculate_iou(self, mask1, mask2) -> float:

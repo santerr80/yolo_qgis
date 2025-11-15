@@ -7,6 +7,7 @@
 import os
 import json
 import uuid
+import logging
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Union
 from pathlib import Path
@@ -16,6 +17,9 @@ from . import stderr_fix
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread
 from qgis.PyQt.QtWidgets import QMessageBox
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 from .yolo_trainer import YOLOTrainer, TrainingProgress
 from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
@@ -77,20 +81,13 @@ class YOLOTrainingManager(QObject):
         self.metrics_tracker.metrics_updated.connect(self._on_metrics_tracked)
         self.metrics_tracker.experiment_completed.connect(self._on_experiment_completed)
     
-    def start_detection_training(self,
-                               dataset_path: str,
-                               model_type: str = 'yolov8n',
-                               epochs: int = 100,
-                               batch_size: int = 16,
-                               image_size: int = 640,
-                               learning_rate: float = 0.01,
-                               device: str = 'cpu',
-                               pretrained: bool = True,
-                               save_dir: str = None,
-                               project_name: str = None,
+    def _start_training_common(self, task: str, trainer, dataset_path: str,
+                               model_type: str, epochs: int, batch_size: int,
+                               image_size: int, learning_rate: float, device: str,
+                               pretrained: bool, save_dir: str, project_name: str,
                                **kwargs) -> str:
         """
-        Запускает обучение модели детекции
+        Общий метод для запуска обучения (детекция или сегментация)
         
         :return: ID эксперимента
         """
@@ -100,7 +97,7 @@ class YOLOTrainingManager(QObject):
             
             # Подготавливаем конфигурацию
             config = {
-                'task': 'detect',
+                'task': task,
                 'model_type': model_type,
                 'epochs': epochs,
                 'batch_size': batch_size,
@@ -113,36 +110,52 @@ class YOLOTrainingManager(QObject):
             }
             
             # Начинаем эксперимент в трекере метрик
-            experiment_name = project_name or f"Detection_{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            task_name = 'Detection' if task == 'detect' else 'Segmentation'
+            experiment_name = project_name or f"{task_name}_{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             self.metrics_tracker.start_experiment(
-                experiment_id, experiment_name, 'detect', model_type, dataset_path, config
+                experiment_id, experiment_name, task, model_type, dataset_path, config
             )
             
             # Сохраняем информацию об эксперименте
             self.active_experiments[experiment_id] = {
-                'type': 'detection',
-                'trainer': self.detection_trainer,
+                'type': task,
+                'trainer': trainer,
                 'config': config,
                 'start_time': datetime.now()
             }
             
             # Сохраняем experiment_id в progress для удобного доступа
-            self.detection_trainer.progress.experiment_id = experiment_id
+            trainer.progress.experiment_id = experiment_id
             
             # Запускаем обучение
-            success = self.detection_trainer.train_detection_model(
-                dataset_path=dataset_path,
-                model_type=model_type,
-                epochs=epochs,
-                batch_size=batch_size,
-                image_size=image_size,
-                learning_rate=learning_rate,
-                device=device,
-                pretrained=pretrained,
-                save_dir=save_dir,
-                project_name=project_name,
-                **kwargs
-            )
+            if task == 'detect':
+                success = trainer.train_detection_model(
+                    dataset_path=dataset_path,
+                    model_type=model_type,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    image_size=image_size,
+                    learning_rate=learning_rate,
+                    device=device,
+                    pretrained=pretrained,
+                    save_dir=save_dir,
+                    project_name=project_name,
+                    **kwargs
+                )
+            else:
+                success = trainer.train_segmentation_model(
+                    dataset_path=dataset_path,
+                    model_type=model_type,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    image_size=image_size,
+                    learning_rate=learning_rate,
+                    device=device,
+                    pretrained=pretrained,
+                    save_dir=save_dir,
+                    project_name=project_name,
+                    **kwargs
+                )
             
             if success:
                 self.training_started.emit(experiment_id)
@@ -154,8 +167,43 @@ class YOLOTrainingManager(QObject):
                 return None
                 
         except Exception as e:
-            print(f"Ошибка запуска обучения детекции: {e}")
+            logger.error(f"Ошибка запуска обучения {task}: {e}", exc_info=True)
             return None
+    
+    def start_detection_training(self,
+                               dataset_path: str,
+                               model_type: str = 'yolov8n',
+                               epochs: int = 100,
+                               batch_size: int = 16,
+                               image_size: int = 640,
+                               learning_rate: float = 0.01,
+                               device: str = 'cpu',
+                               pretrained: bool = True,
+                               save_dir: str = None,
+                               project_name: str = None,
+                               resume_training: bool = False,
+                               **kwargs) -> str:
+        """
+        Запускает обучение модели детекции
+        
+        :return: ID эксперимента
+        """
+        return self._start_training_common(
+            task='detect',
+            trainer=self.detection_trainer,
+            dataset_path=dataset_path,
+            model_type=model_type,
+            epochs=epochs,
+            batch_size=batch_size,
+            image_size=image_size,
+            learning_rate=learning_rate,
+            device=device,
+            pretrained=pretrained,
+            save_dir=save_dir,
+            project_name=project_name,
+            resume_training=resume_training,
+            **kwargs
+        )
     
     def start_segmentation_training(self,
                                   dataset_path: str,
@@ -168,74 +216,29 @@ class YOLOTrainingManager(QObject):
                                   pretrained: bool = True,
                                   save_dir: str = None,
                                   project_name: str = None,
+                                  resume_training: bool = False,
                                   **kwargs) -> str:
         """
         Запускает обучение модели сегментации
         
         :return: ID эксперимента
         """
-        try:
-            # Создаем ID эксперимента
-            experiment_id = str(uuid.uuid4())
-            
-            # Подготавливаем конфигурацию
-            config = {
-                'task': 'segment',
-                'model_type': model_type,
-                'epochs': epochs,
-                'batch_size': batch_size,
-                'image_size': image_size,
-                'learning_rate': learning_rate,
-                'device': device,
-                'pretrained': pretrained,
-                'dataset_path': dataset_path,
-                **kwargs
-            }
-            
-            # Начинаем эксперимент в трекере метрик
-            experiment_name = project_name or f"Segmentation_{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.metrics_tracker.start_experiment(
-                experiment_id, experiment_name, 'segment', model_type, dataset_path, config
-            )
-            
-            # Сохраняем информацию об эксперименте
-            self.active_experiments[experiment_id] = {
-                'type': 'segmentation',
-                'trainer': self.segmentation_trainer,
-                'config': config,
-                'start_time': datetime.now()
-            }
-            
-            # Сохраняем experiment_id в progress для удобного доступа
-            self.segmentation_trainer.progress.experiment_id = experiment_id
-            
-            # Запускаем обучение
-            success = self.segmentation_trainer.train_segmentation_model(
-                dataset_path=dataset_path,
-                model_type=model_type,
-                epochs=epochs,
-                batch_size=batch_size,
-                image_size=image_size,
-                learning_rate=learning_rate,
-                device=device,
-                pretrained=pretrained,
-                save_dir=save_dir,
-                project_name=project_name,
-                **kwargs
-            )
-            
-            if success:
-                self.training_started.emit(experiment_id)
-                return experiment_id
-            else:
-                # Удаляем неудачный эксперимент
-                if experiment_id in self.active_experiments:
-                    del self.active_experiments[experiment_id]
-                return None
-                
-        except Exception as e:
-            print(f"Ошибка запуска обучения сегментации: {e}")
-            return None
+        return self._start_training_common(
+            task='segment',
+            trainer=self.segmentation_trainer,
+            dataset_path=dataset_path,
+            model_type=model_type,
+            epochs=epochs,
+            batch_size=batch_size,
+            image_size=image_size,
+            learning_rate=learning_rate,
+            device=device,
+            pretrained=pretrained,
+            save_dir=save_dir,
+            project_name=project_name,
+            resume_training=resume_training,
+            **kwargs
+        )
     
     def validate_model(self,
                       model_path: str,
@@ -366,7 +369,7 @@ class YOLOTrainingManager(QObject):
                 return True
             return False
         except Exception as e:
-            print(f"Ошибка отмены обучения: {e}")
+            logger.error(f"Ошибка отмены обучения: {e}", exc_info=True)
             return False
     
     def get_active_experiments(self) -> Dict:
@@ -488,7 +491,7 @@ class TrainingConfigManager:
                 json.dump(config, f, indent=2, ensure_ascii=False)
             return True
         except Exception as e:
-            print(f"Ошибка сохранения конфигурации: {e}")
+            logger.error(f"Ошибка сохранения конфигурации: {e}", exc_info=True)
             return False
     
     def load_config(self, name: str) -> Dict:
@@ -498,7 +501,7 @@ class TrainingConfigManager:
             with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Ошибка загрузки конфигурации: {e}")
+            logger.error(f"Ошибка загрузки конфигурации: {e}", exc_info=True)
             return {}
     
     def list_configs(self) -> List[str]:
@@ -510,7 +513,7 @@ class TrainingConfigManager:
                     configs.append(file[:-5])  # Убираем .json
             return sorted(configs)
         except Exception as e:
-            print(f"Ошибка получения списка конфигураций: {e}")
+            logger.error(f"Ошибка получения списка конфигураций: {e}", exc_info=True)
             return []
     
     def delete_config(self, name: str) -> bool:
@@ -522,7 +525,7 @@ class TrainingConfigManager:
                 return True
             return False
         except Exception as e:
-            print(f"Ошибка удаления конфигурации: {e}")
+            logger.error(f"Ошибка удаления конфигурации: {e}", exc_info=True)
             return False
     
     def get_default_configs(self) -> Dict:
@@ -548,6 +551,26 @@ class TrainingConfigManager:
                 'device': 'cpu',
                 'pretrained': True
             },
+            'detection_fast_yolo11': {
+                'task': 'detect',
+                'model_type': 'yolov11n',
+                'epochs': 50,
+                'batch_size': 16,
+                'image_size': 640,
+                'learning_rate': 0.01,
+                'device': 'cpu',
+                'pretrained': True
+            },
+            'detection_accurate_yolo11': {
+                'task': 'detect',
+                'model_type': 'yolov11l',
+                'epochs': 200,
+                'batch_size': 8,
+                'image_size': 640,
+                'learning_rate': 0.005,
+                'device': 'cpu',
+                'pretrained': True
+            },
             'segmentation_fast': {
                 'task': 'segment',
                 'model_type': 'yolov8n-seg',
@@ -562,6 +585,28 @@ class TrainingConfigManager:
             'segmentation_accurate': {
                 'task': 'segment',
                 'model_type': 'yolov8l-seg',
+                'epochs': 200,
+                'batch_size': 8,
+                'image_size': 640,
+                'learning_rate': 0.005,
+                'device': 'cpu',
+                'pretrained': True,
+                'copy_paste': 0.3
+            },
+            'segmentation_fast_yolo11': {
+                'task': 'segment',
+                'model_type': 'yolov11n-seg',
+                'epochs': 50,
+                'batch_size': 16,
+                'image_size': 640,
+                'learning_rate': 0.01,
+                'device': 'cpu',
+                'pretrained': True,
+                'copy_paste': 0.3
+            },
+            'segmentation_accurate_yolo11': {
+                'task': 'segment',
+                'model_type': 'yolov11l-seg',
                 'epochs': 200,
                 'batch_size': 8,
                 'image_size': 640,

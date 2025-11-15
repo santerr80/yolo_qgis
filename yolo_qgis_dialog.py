@@ -7,12 +7,18 @@
 """
 
 import os
+import json
+import logging
+from datetime import datetime
 
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
 from qgis.PyQt.QtCore import Qt
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 # --- ИМПОРТ ФУНКЦИЙ ИЗ ВНЕШНИХ МОДУЛЕЙ ---
 from .grid_creator import create_grid_layer
@@ -81,7 +87,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Устанавливаем начальную подсказку для QgsFileWidget
             self.mQgsFileWidget.setToolTip("Dataset directory for new dataset")
         except Exception as e:
-            print(f"Предупреждение: не удалось инициализировать QgsFileWidget: {e}")
+            logger.warning(f"Не удалось инициализировать QgsFileWidget: {e}")
         
         # Подключение кнопок управления датасетами
         self.manageDatasetsButton.clicked.connect(self.open_dataset_manager_dialog)
@@ -160,11 +166,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 # В обычном режиме возвращаем стандартную подсказку
                 self.mQgsFileWidget.setToolTip("Dataset directory for new dataset")
         except Exception as e:
-            print(f"Предупреждение: не удалось обновить подсказку QgsFileWidget: {e}")
+            logger.warning(f"Не удалось обновить подсказку QgsFileWidget: {e}")
 
     def run_dataset_creation(self):
         """Основная функция, запускающая весь процесс."""
-        print("--- Запуск процесса ---")
+        logger.info("--- Запуск процесса ---")
         self.progressBar.setValue(0)
 
         # --- Сбор и проверка данных ---
@@ -173,7 +179,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             try:
                 output_dir = self.mQgsFileWidget.filePath()
             except Exception as e:
-                print(f"Ошибка получения пути из QgsFileWidget: {e}")
+                logger.error(f"Ошибка получения пути из QgsFileWidget: {e}", exc_info=True)
                 output_dir = ""
             
             objects_layer = self.mMapLayerComboBoxObjects.currentLayer()
@@ -190,9 +196,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 if not is_valid_dataset:
                     # Если датасета нет, переключаемся в режим создания нового
                     is_update_mode = False
-                    print("В указанной директории не найден существующий датасет. Создается новый датасет.")
+                    logger.info("В указанной директории не найден существующий датасет. Создается новый датасет.")
                 else:
-                    print(f"Найден существующий датасет в директории: {output_dir}")
+                    logger.info(f"Найден существующий датасет в директории: {output_dir}")
             
             img_width_m = float(self.lineEdit_WidthMeter.text())
             img_height_m = float(self.lineEdit_HeigthMeter.text())
@@ -214,7 +220,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             return
         
         # --- ШАГ 1: Создание сетки (0% -> 15%) ---
-        print("\n1. Создание сетки...")
+        logger.info("1. Создание сетки...")
         self.progressBar.setValue(5)
         grid_layer, error_msg = create_grid_layer(
             source_layer=objects_layer, h_spacing=img_width_m, v_spacing=img_height_m,
@@ -224,10 +230,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         grid_layer.setName(f"Сетка для '{objects_layer.name()}'")
         QgsProject.instance().addMapLayer(grid_layer)
         self.progressBar.setValue(15)
-        print("Сетка создана.")
+        logger.info("Сетка создана.")
 
         # --- ШАГ 2: Выполнение пересечения (15% -> 25%) ---
-        print("\n2. Пересечение объектов с сеткой...")
+        logger.info("2. Пересечение объектов с сеткой...")
         self.progressBar.setValue(20)
         intersected_layer, error_msg = perform_intersection(
             input_layer=objects_layer, overlay_layer=grid_layer)
@@ -236,10 +242,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         intersected_layer.setName(f"Пересечение для '{objects_layer.name()}'")
         QgsProject.instance().addMapLayer(intersected_layer)
         self.progressBar.setValue(25)
-        print("Слой пересечения создан.")
+        logger.info("Слой пересечения создан.")
 
         # --- ШАГ 3: Экспорт изображений (25% -> 75%) ---
-        print("\n3. Экспорт изображений тайлов...")
+        logger.info("3. Экспорт изображений тайлов...")
         
         # В режиме обновления экспортируем изображения в существующий датасет
         if is_update_mode:
@@ -258,7 +264,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         if not success:
             QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
         self.progressBar.setValue(75)
-        print("Экспорт изображений завершен.")
+        logger.info("Экспорт изображений завершен.")
 
         # --- ШАГ 4: Формирование датасета (75% -> 100%) ---
         splits = {
@@ -279,7 +285,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         
         # --- ИЗМЕНЕНИЕ: ВЫБОР РЕЖИМА РАБОТЫ ---
         if is_update_mode:
-            print("\n4. Обновление существующего датасета...")
+            logger.info("4. Обновление существующего датасета...")
             success, error_msg = self.update_existing_dataset(
                 existing_dataset_path=output_dir,
                 intersected_layer=intersected_layer, 
@@ -292,14 +298,14 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 progress_reporter=progress_reporter_format
             )
         elif save_in_yolo_format:
-            print("\n4. Формирование датасета в нативном формате YOLO...")
+            logger.info("4. Формирование датасета в нативном формате YOLO...")
             success, error_msg = save_yolo_native_dataset(
                 intersected_layer=intersected_layer, grid_layer=grid_layer,
                 class_field=classes_field, output_dir=output_dir, image_format=img_format,
                 splits=splits, metadata=metadata, delete_void=delete_void,
                 progress_reporter=progress_reporter_format)
         else:
-            print("\n4. Формирование файла аннотаций data.ndjson...")
+            logger.info("4. Формирование файла аннотаций data.ndjson...")
             success, error_msg = format_yolo_dataset(
                 intersected_layer=intersected_layer, grid_layer=grid_layer,
                 class_field=classes_field, output_dir=output_dir, image_format=img_format,
@@ -310,10 +316,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             
         if not success:
             QtWidgets.QMessageBox.critical(self, "Ошибка", error_msg); self.progressBar.setValue(0); return
-        print("Формирование датасета завершено.")
+        logger.info("Формирование датасета завершено.")
         
         self.progressBar.setValue(100)
-        print("\n--- Процесс успешно завершен ---")
+        logger.info("--- Процесс успешно завершен ---")
         if is_update_mode:
             QtWidgets.QMessageBox.information(self, "Готово", f"Датасет успешно обновлен!\nОбновлен в: {output_dir}")
         else:
@@ -335,9 +341,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             progress_reporter.set_progress(1, 5)
             success, backup_message = dataset_manager.create_backup()
             if not success:
-                print(f"Предупреждение: {backup_message}")
+                logger.warning(backup_message)
             else:
-                print(f"Резервная копия: {backup_message}")
+                logger.info(backup_message)
             
             # Обновляем метаданные
             progress_reporter.set_progress(2, 5)
@@ -365,7 +371,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 success, classes_message = dataset_manager.add_new_classes(new_classes)
                 if not success:
                     return False, f"Ошибка добавления классов: {classes_message}"
-                print(f"Добавлены новые классы: {', '.join(new_classes)}")
+                logger.info(f"Добавлены новые классы: {', '.join(new_classes)}")
             
             # Добавляем новые данные
             progress_reporter.set_progress(4, 5)
@@ -417,7 +423,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self._refresh_experiments_list()
             
         except Exception as e:
-            print(f"Ошибка инициализации компонентов тренировки: {e}")
+            logger.error(f"Ошибка инициализации компонентов тренировки: {e}", exc_info=True)
             QtWidgets.QMessageBox.warning(self, "Предупреждение", 
                                         f"Некоторые функции тренировки могут быть недоступны: {e}")
     
@@ -469,13 +475,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.comboBoxTaskType.currentTextChanged.connect(self._on_task_type_changed)
             
         except Exception as e:
-            print(f"Ошибка настройки соединений тренировки: {e}")
+            logger.error(f"Ошибка настройки соединений тренировки: {e}", exc_info=True)
     
     def _on_task_type_changed(self, task_type):
         """Обработчик изменения типа задачи"""
         try:
             if not hasattr(self, 'comboBoxModelType'):
-                print("Предупреждение: comboBoxModelType не найден")
+                logger.warning("comboBoxModelType не найден")
                 return
                 
             if "Детекция" in task_type:
@@ -486,7 +492,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     "YOLOv8s (сбалансированная)", 
                     "YOLOv8m (средняя)",
                     "YOLOv8l (большая)",
-                    "YOLOv8x (максимальная)"
+                    "YOLOv8x (максимальная)",
+                    "YOLOv11n (быстрая)",
+                    "YOLOv11s (сбалансированная)",
+                    "YOLOv11m (средняя)",
+                    "YOLOv11l (большая)",
+                    "YOLOv11x (максимальная)"
                 ]
                 self.comboBoxModelType.addItems(models)
             elif "Сегментация" in task_type:
@@ -497,11 +508,16 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     "YOLOv8s-seg (сбалансированная)",
                     "YOLOv8m-seg (средняя)", 
                     "YOLOv8l-seg (большая)",
-                    "YOLOv8x-seg (максимальная)"
+                    "YOLOv8x-seg (максимальная)",
+                    "YOLOv11n-seg (быстрая)",
+                    "YOLOv11s-seg (сбалансированная)",
+                    "YOLOv11m-seg (средняя)",
+                    "YOLOv11l-seg (большая)",
+                    "YOLOv11x-seg (максимальная)"
                 ]
                 self.comboBoxModelType.addItems(models)
         except Exception as e:
-            print(f"Ошибка обновления типа задачи: {e}")
+            logger.error(f"Ошибка обновления типа задачи: {e}", exc_info=True)
     
     def _start_training(self):
         """Запускает процесс тренировки"""
@@ -654,7 +670,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             dialog.exec_()
             
         except Exception as e:
-            print(f"Ошибка отображения анализа: {e}")
+            logger.error(f"Ошибка отображения анализа: {e}", exc_info=True)
     
     def _format_analysis_results(self, analysis):
         """Форматирует результаты анализа для отображения"""
@@ -704,11 +720,21 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             "YOLOv8m (средняя)": "yolov8m",
             "YOLOv8l (большая)": "yolov8l",
             "YOLOv8x (максимальная)": "yolov8x",
+            "YOLOv11n (быстрая)": "yolov11n",
+            "YOLOv11s (сбалансированная)": "yolov11s",
+            "YOLOv11m (средняя)": "yolov11m",
+            "YOLOv11l (большая)": "yolov11l",
+            "YOLOv11x (максимальная)": "yolov11x",
             "YOLOv8n-seg (быстрая)": "yolov8n-seg",
             "YOLOv8s-seg (сбалансированная)": "yolov8s-seg",
             "YOLOv8m-seg (средняя)": "yolov8m-seg",
             "YOLOv8l-seg (большая)": "yolov8l-seg",
-            "YOLOv8x-seg (максимальная)": "yolov8x-seg"
+            "YOLOv8x-seg (максимальная)": "yolov8x-seg",
+            "YOLOv11n-seg (быстрая)": "yolov11n-seg",
+            "YOLOv11s-seg (сбалансированная)": "yolov11s-seg",
+            "YOLOv11m-seg (средняя)": "yolov11m-seg",
+            "YOLOv11l-seg (большая)": "yolov11l-seg",
+            "YOLOv11x-seg (максимальная)": "yolov11x-seg"
         }
         return model_mapping.get(model_text, "yolov8n")
     
@@ -784,7 +810,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             return config
             
         except Exception as e:
-            print(f"Ошибка получения конфигурации: {e}")
+            logger.error(f"Ошибка получения конфигурации: {e}", exc_info=True)
             return {}
     
     def _apply_training_config(self, config):
@@ -815,7 +841,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     self.doubleSpinBoxFlipLR.setValue(aug['fliplr'])
                     
         except Exception as e:
-            print(f"Ошибка применения конфигурации: {e}")
+            logger.error(f"Ошибка применения конфигурации: {e}", exc_info=True)
     
     # Обработчики сигналов тренировки
     def _on_training_started(self, experiment_id):
@@ -848,7 +874,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self._update_metrics_table(epoch, metrics)
             
         except Exception as e:
-            print(f"Ошибка обновления прогресса: {e}")
+            logger.error(f"Ошибка обновления прогресса: {e}", exc_info=True)
     
     def _on_training_completed(self, experiment_id, success, message):
         """Обработчик завершения тренировки"""
@@ -886,7 +912,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if hasattr(self, 'textEditTrainingLog'):
                 self.textEditTrainingLog.append(text)
         except Exception as e:
-            print(f"Ошибка вывода статусного сообщения: {e}")
+            logger.error(f"Ошибка вывода статусного сообщения: {e}", exc_info=True)
     
     def _on_validation_completed(self, experiment_id, results):
         """Обработчик завершения валидации"""
@@ -899,7 +925,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self._display_validation_results(results)
             
         except Exception as e:
-            print(f"Ошибка обработки результатов валидации: {e}")
+            logger.error(f"Ошибка обработки результатов валидации: {e}", exc_info=True)
     
     def _update_metrics_table(self, epoch, metrics):
         """Обновляет таблицу метрик (добавляет новую строку)"""
@@ -920,7 +946,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.tableWidgetMetrics.scrollToBottom()
             
         except Exception as e:
-            print(f"Ошибка обновления таблицы метрик: {e}")
+            logger.error(f"Ошибка обновления таблицы метрик: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
     
@@ -937,7 +963,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             metrics_data = self.training_manager.metrics_tracker.database.get_experiment_metrics(experiment_id)
             
             if not metrics_data:
-                print(f"Метрики для эксперимента {experiment_id} не найдены в базе данных")
+                logger.warning(f"Метрики для эксперимента {experiment_id} не найдены в базе данных")
                 return
             
             # Группируем метрики по эпохам
@@ -1002,7 +1028,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.tableWidgetMetrics.scrollToBottom()
             
         except Exception as e:
-            print(f"Ошибка загрузки метрик из базы данных: {e}")
+            logger.error(f"Ошибка загрузки метрик из базы данных: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
     
@@ -1037,7 +1063,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self._on_experiment_selected()
                 
         except Exception as e:
-            print(f"Ошибка обновления списка экспериментов: {e}")
+            logger.error(f"Ошибка обновления списка экспериментов: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
     
@@ -1063,7 +1089,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self._load_metrics_from_database(experiment_id)
             
         except Exception as e:
-            print(f"Ошибка выбора эксперимента: {e}")
+            logger.error(f"Ошибка выбора эксперимента: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
     
@@ -1271,7 +1297,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.textEditValidationLog.append(f"Валидация завершена: {results.get('timestamp', 'N/A')}")
             
         except Exception as e:
-            print(f"Ошибка отображения результатов валидации: {e}")
+            logger.error(f"Ошибка отображения результатов валидации: {e}", exc_info=True)
     
     def _get_metric_description(self, metric_name):
         """Возвращает описание метрики"""

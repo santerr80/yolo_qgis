@@ -111,6 +111,86 @@ def example_segmentation_training():
         print("Ошибка запуска обучения")
 
 
+def example_resume_training():
+    """Пример возобновления прерванного обучения"""
+    print("\n=== Пример возобновления прерванного обучения ===")
+    
+    # Инициализируем менеджер обучения
+    manager = YOLOTrainingManager(
+        log_dir='logs/resume_example',
+        db_path='yolo_metrics.db'
+    )
+    
+    # Путь к датасету
+    dataset_path = "path/to/your/dataset"
+    
+    if not os.path.exists(dataset_path):
+        print(f"Датасет не найден: {dataset_path}")
+        return
+    
+    # Способ 1: Автоматический поиск last.pt в стандартном месте
+    # Система автоматически найдет last.pt в save_dir/project_name/weights/last.pt
+    print("Способ 1: Автоматический поиск last.pt")
+    experiment_id = manager.start_detection_training(
+        dataset_path=dataset_path,
+        model_type='yolov8n',
+        epochs=100,
+        batch_size=16,
+        image_size=640,
+        learning_rate=0.01,
+        device='cpu',
+        pretrained=True,
+        save_dir='runs',  # Директория, где сохраняются результаты
+        project_name='my_training',  # Имя проекта (должно совпадать с предыдущим обучением)
+        resume_training=True,  # Включаем режим возобновления
+    )
+    
+    if experiment_id:
+        print(f"Обучение возобновлено. ID эксперимента: {experiment_id}")
+    else:
+        print("Ошибка возобновления обучения (возможно, last.pt не найден)")
+    
+    # Способ 2: Указание пути к last.pt напрямую через base_weights_path
+    print("\nСпособ 2: Указание пути к last.pt напрямую")
+    last_pt_path = "path/to/last.pt"  # Полный путь к файлу last.pt
+    
+    if os.path.exists(last_pt_path):
+        experiment_id = manager.start_detection_training(
+            dataset_path=dataset_path,
+            model_type='yolov8n',
+            epochs=100,
+            batch_size=16,
+            image_size=640,
+            learning_rate=0.01,
+            device='cpu',
+            pretrained=True,
+            save_dir='runs',
+            project_name='my_training',
+            resume_training=True,  # Включаем режим возобновления
+            base_weights_path=last_pt_path  # Указываем путь к чекпоинту
+        )
+        
+        if experiment_id:
+            print(f"Обучение возобновлено из {last_pt_path}. ID эксперимента: {experiment_id}")
+        else:
+            print("Ошибка возобновления обучения")
+    else:
+        print(f"Файл last.pt не найден: {last_pt_path}")
+    
+    # Пример использования с ultralytics напрямую (как в документации)
+    print("\nСпособ 3: Использование ultralytics напрямую")
+    print("""
+    from ultralytics import YOLO
+    
+    # Load a model
+    model = YOLO("path/to/last.pt")  # load a partially trained model
+    
+    # Resume training
+    results = model.train(resume=True)
+    """)
+    print("Этот способ реализован автоматически при использовании resume_training=True")
+
+
 def example_model_validation():
     """Пример валидации модели"""
     print("\n=== Пример валидации модели ===")
@@ -301,6 +381,7 @@ def main():
         # Раскомментируйте для запуска обучения (требует реальные датасеты)
         # example_detection_training()
         # example_segmentation_training()
+        # example_resume_training()  # Пример возобновления обучения
         # example_model_validation()
         # example_model_comparison()
         

@@ -11,6 +11,7 @@ import json
 import yaml
 import shutil
 import time
+import logging
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Union, Callable
 from pathlib import Path
@@ -21,6 +22,9 @@ from . import stderr_fix
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread
 from qgis.PyQt.QtWidgets import QMessageBox
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 # Настройка для предотвращения создания новых окон
 if sys.platform == "win32":
@@ -81,7 +85,7 @@ class YOLOTrainer(QObject):
         Запускает обучение YOLO модели
         
         :param dataset_path: Путь к датасету (должен содержать dataset.yaml)
-        :param model_type: Тип модели (yolov8n, yolov8s, yolov8m, yolov8l, yolov8x)
+        :param model_type: Тип модели (yolov8n, yolov8s, yolov8m, yolov8l, yolov8x, yolov11n, yolov11s, yolov11m, yolov11l, yolov11x)
         :param task: Тип задачи ('detect' или 'segment')
         :param epochs: Количество эпох
         :param batch_size: Размер батча
@@ -201,7 +205,7 @@ class YOLOTrainer(QObject):
             try:
                 shutil.rmtree(self.temp_dir)
             except Exception as e:
-                print(f"Ошибка очистки временной директории: {e}")
+                logger.error(f"Ошибка очистки временной директории: {e}", exc_info=True)
 
 
 class TrainingThread(QThread):
@@ -391,15 +395,15 @@ class TrainingThread(QThread):
                     pass
             
             # Проверка доступности CUDA устройств
-            print(f"PyTorch version: {torch.__version__}")
-            print(f"CUDA available: {torch.cuda.is_available()}")
+            logger.info(f"PyTorch version: {torch.__version__}")
+            logger.info(f"CUDA available: {torch.cuda.is_available()}")
             if torch.cuda.is_available():
-                print(f"CUDA version: {torch.version.cuda}")
-                print(f"Number of GPUs: {torch.cuda.device_count()}")
-                print(f"GPU Name: {torch.cuda.get_device_name(0)}")
+                logger.info(f"CUDA version: {torch.version.cuda}")
+                logger.info(f"Number of GPUs: {torch.cuda.device_count()}")
+                logger.info(f"GPU Name: {torch.cuda.get_device_name(0)}")
             else:
-                print("CUDA version: N/A (CUDA not available)")
-                print("Number of GPUs: 0")
+                logger.info("CUDA version: N/A (CUDA not available)")
+                logger.info("Number of GPUs: 0")
             
             # Конфигурация
             dataset_path = self.config['dataset_path']
@@ -430,11 +434,56 @@ class TrainingThread(QThread):
             strict_class_check: bool = bool(additional_params.get('strict_class_check', False))
             finetune_lr: Optional[float] = additional_params.get('finetune_lr')
 
-            # Загружаем модель (предпочтительно из пользовательских весов для дообучения)
+            # Определяем, нужно ли возобновлять обучение
+            resume_from_checkpoint = False
+            checkpoint_path = None
+            
+            # Если указан resume_training, ищем last.pt в стандартном месте
+            if resume_training:
+                # Стандартный путь к last.pt: save_dir/project_name/weights/last.pt
+                last_ckpt = os.path.join(save_dir, project_name, 'weights', 'last.pt')
+                if os.path.exists(last_ckpt):
+                    checkpoint_path = last_ckpt
+                    resume_from_checkpoint = True
+                    self.progress.status_updated.emit(f"Найден чекпоинт для возобновления: {last_ckpt}")
+                else:
+                    # Также проверяем альтернативные пути
+                    alt_paths = [
+                        os.path.join(save_dir, project_name, 'last.pt'),
+                        os.path.join(save_dir, 'last.pt'),
+                    ]
+                    for alt_path in alt_paths:
+                        if os.path.exists(alt_path):
+                            checkpoint_path = alt_path
+                            resume_from_checkpoint = True
+                            self.progress.status_updated.emit(f"Найден чекпоинт для возобновления: {alt_path}")
+                            break
+                    
+                    if not resume_from_checkpoint:
+                        self.progress.status_updated.emit("Режим возобновления включен, но last.pt не найден. Начинаем новое обучение.")
+            
+            # Если base_weights_path указывает на last.pt, используем его для возобновления
             if base_weights_path and os.path.exists(base_weights_path):
+                # Проверяем, является ли это чекпоинтом (содержит 'last.pt' в имени или это файл .pt)
+                if base_weights_path.endswith('.pt') and ('last' in os.path.basename(base_weights_path).lower() or resume_training):
+                    checkpoint_path = base_weights_path
+                    resume_from_checkpoint = True
+                    self.progress.status_updated.emit(f"Используем чекпоинт для возобновления: {base_weights_path}")
+            
+            # Загружаем модель
+            if resume_from_checkpoint and checkpoint_path:
+                # Загружаем модель из чекпоинта для возобновления обучения
+                model = YOLO(checkpoint_path)
+                self.progress.status_updated.emit(f"Модель загружена из чекпоинта: {checkpoint_path}")
+            elif base_weights_path and os.path.exists(base_weights_path):
+                # Загружаем модель из пользовательских весов для дообучения
                 model = YOLO(base_weights_path)
+                self.progress.status_updated.emit(f"Модель загружена из весов: {base_weights_path}")
             else:
+                # Загружаем стандартную модель
                 model = YOLO(f"{model_type}.pt" if pretrained else f"{model_type}.yaml")
+                self.progress.status_updated.emit(f"Модель загружена: {model_type}")
+            
             self.current_model = model
             
             # Определяем количество workers для DataLoader
@@ -528,14 +577,11 @@ class TrainingThread(QThread):
                 # Не прерываем обучение, если не удалось корректно заморозить
                 pass
 
-            # Поддержка возобновления обучения (resume) при наличии last.pt
-            if resume_training:
-                last_ckpt = os.path.join(save_dir, project_name, 'weights', 'last.pt')
-                if os.path.exists(last_ckpt):
-                    train_args['resume'] = True
-                else:
-                    # Если нет last.pt для текущего проекта, но указан base_weights_path — просто продолжим с ним
-                    self.progress.status_updated.emit("Режим возобновления включен, но last.pt не найден. Продолжим без resume.")
+            # Поддержка возобновления обучения (resume) при наличии чекпоинта
+            if resume_from_checkpoint:
+                # Используем resume=True для возобновления обучения из чекпоинта
+                train_args['resume'] = True
+                self.progress.status_updated.emit("Режим возобновления обучения активирован")
             
             # Запускаем обучение
             self.progress.total_epochs = epochs
@@ -670,17 +716,15 @@ class TrainingThread(QThread):
                         
                         # Отладочная информация
                         if not validation_metrics:
-                            print(f"Предупреждение: Метрики валидации не найдены для эпохи {current_epoch}")
-                            print(f"Доступные атрибуты trainer: {dir(trainer_obj)[:20]}")
+                            logger.warning(f"Метрики валидации не найдены для эпохи {current_epoch}")
+                            logger.debug(f"Доступные атрибуты trainer: {dir(trainer_obj)[:20]}")
                             if hasattr(trainer_obj, 'validator'):
-                                print(f"Validator доступен: {trainer_obj.validator is not None}")
+                                logger.debug(f"Validator доступен: {trainer_obj.validator is not None}")
                                 if trainer_obj.validator:
-                                    print(f"Validator атрибуты: {dir(trainer_obj.validator)[:20]}")
+                                    logger.debug(f"Validator атрибуты: {dir(trainer_obj.validator)[:20]}")
                     except Exception as e:
                         # Логируем ошибку для отладки
-                        print(f"Ошибка извлечения метрик валидации: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        logger.error(f"Ошибка извлечения метрик валидации: {e}", exc_info=True)
 
                     # Эмитим метрики отдельно для training и validation
                     if training_metrics:
@@ -712,10 +756,7 @@ class TrainingThread(QThread):
                     self.progress.status_updated.emit(status_line)
                 except Exception as e:
                     # Логируем ошибку, но не мешаем обучению
-                    import traceback
-                    print(f"Ошибка извлечения метрик: {e}")
-                    print(traceback.format_exc())
-                    pass
+                    logger.error(f"Ошибка извлечения метрик: {e}", exc_info=True)
 
             def _on_train_start(trainer_obj):
                 self.progress.status_updated.emit("Старт обучения модели")
@@ -766,13 +807,11 @@ class TrainingThread(QThread):
                     # Эмитим метрики валидации
                     if validation_metrics:
                         self.progress.validation_metrics_updated.emit(current_epoch, validation_metrics)
-                        print(f"Метрики валидации для эпохи {current_epoch}: {validation_metrics}")
+                        logger.debug(f"Метрики валидации для эпохи {current_epoch}: {validation_metrics}")
                     else:
-                        print(f"Предупреждение: Метрики валидации не найдены в on_val_end для эпохи {current_epoch}")
+                        logger.warning(f"Метрики валидации не найдены в on_val_end для эпохи {current_epoch}")
                 except Exception as e:
-                    print(f"Ошибка в on_val_end: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.error(f"Ошибка в on_val_end: {e}", exc_info=True)
 
             # Коллбек с частой проверкой отмены перед эпохой и перед батчем
             def _on_fit_epoch_start(trainer_obj):
@@ -815,8 +854,7 @@ class TrainingThread(QThread):
                 model.add_callback('on_val_end', _on_val_end)  # Коллбек после валидации
             except Exception as e:
                 # Если API коллбеков недоступен, просто продолжаем без онлайновых метрик
-                print(f"Предупреждение: Не удалось добавить некоторые коллбеки: {e}")
-                pass
+                logger.warning(f"Не удалось добавить некоторые коллбеки: {e}")
             
             # Простой запуск без сложных callback'ов
             results = model.train(**train_args)
@@ -853,7 +891,7 @@ class TrainingThread(QThread):
                         'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
                     }, f, indent=2)
             except Exception as e:
-                print(f"Ошибка сохранения результатов: {e}")
+                logger.error(f"Ошибка сохранения результатов: {e}", exc_info=True)
             
             self.progress.training_finished.emit(True, "Обучение завершено успешно")
             
@@ -968,7 +1006,7 @@ class ModelValidator:
                 json.dump(self.validation_results, f, indent=2, ensure_ascii=False)
             return True
         except Exception as e:
-            print(f"Ошибка сохранения результатов валидации: {e}")
+            logger.error(f"Ошибка сохранения результатов валидации: {e}", exc_info=True)
             return False
 
 
@@ -986,7 +1024,7 @@ class ModelPredictor:
             from ultralytics import YOLO
             self.model = YOLO(self.model_path)
         except Exception as e:
-            print(f"Ошибка загрузки модели: {e}")
+            logger.error(f"Ошибка загрузки модели: {e}", exc_info=True)
             self.model = None
     
     def predict(self, 
@@ -1052,6 +1090,6 @@ class ModelPredictor:
             return predictions
             
         except Exception as e:
-            print(f"Ошибка предсказания: {e}")
+            logger.error(f"Ошибка предсказания: {e}", exc_info=True)
             return []
 
