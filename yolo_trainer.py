@@ -587,200 +587,94 @@ class TrainingThread(QThread):
             self.progress.total_epochs = epochs
             self.progress.status_updated.emit("Начинаем обучение...")
 
-            # Коллбеки Ultralytics для онлайновых метрик по эпохам
-            def _on_fit_epoch_end(trainer_obj):
+            # Используем стандартные коллбеки Ultralytics
+            def _on_train_epoch_end(trainer):
+                """Стандартный коллбек Ultralytics после завершения эпохи обучения"""
                 try:
-                    current_epoch = int(getattr(trainer_obj, 'epoch', 0)) + 1
-                    total_epochs = int(getattr(trainer_obj, 'args', {}).get('epochs', self.progress.total_epochs) or self.progress.total_epochs)
+                    current_epoch = int(getattr(trainer, 'epoch', 0)) + 1
+                    total_epochs = int(getattr(trainer, 'epochs', self.progress.total_epochs) or self.progress.total_epochs)
                     self.progress.current_epoch = current_epoch
                     self.progress.total_epochs = total_epochs
 
-                    # Извлечь метрики: trainer_obj.metrics может быть dict или объект
-                    raw_metrics = getattr(trainer_obj, 'metrics', {})
-                    
-                    # Разделяем метрики на training и validation
+                    # Извлекаем метрики обучения из стандартных атрибутов trainer
                     training_metrics = {}
-                    validation_metrics = {}
-                    all_metrics = {}
+                    if hasattr(trainer, 'loss'):
+                        loss = trainer.loss
+                        if hasattr(loss, 'item'):
+                            training_metrics['loss'] = float(loss.item())
+                        elif isinstance(loss, (int, float)):
+                            training_metrics['loss'] = float(loss)
                     
-                    # Пытаемся извлечь метрики из разных источников
-                    if isinstance(raw_metrics, dict):
-                        all_metrics = {k: float(v) for k, v in raw_metrics.items() if isinstance(v, (int, float))}
-                    else:
-                        # Попытка вытащить наиболее типичные атрибуты
-                        for key in ['loss', 'box_loss', 'seg_loss', 'cls_loss', 'dfl_loss', 'lr']:
-                            if hasattr(raw_metrics, key):
-                                try:
-                                    value = getattr(raw_metrics, key)
-                                    if isinstance(value, (int, float)):
-                                        all_metrics[key] = float(value)
-                                except Exception:
-                                    pass
+                    # Извлекаем компоненты потерь
+                    for loss_name in ['box_loss', 'cls_loss', 'dfl_loss', 'seg_loss']:
+                        if hasattr(trainer, loss_name):
+                            loss_val = getattr(trainer, loss_name)
+                            if hasattr(loss_val, 'item'):
+                                training_metrics[loss_name] = float(loss_val.item())
+                            elif isinstance(loss_val, (int, float)):
+                                training_metrics[loss_name] = float(loss_val)
                     
-                    # Разделяем метрики на training и validation
-                    # В Ultralytics метрики обычно имеют префиксы train/ и val/ или metrics/
-                    for key, value in all_metrics.items():
-                        key_lower = key.lower()
-                        # Training метрики (loss и т.д.)
-                        if any(x in key_lower for x in ['train', 'loss', 'lr', 'box_loss', 'cls_loss', 'dfl_loss', 'seg_loss']):
-                            # Убираем префикс train/ если есть
-                            clean_key = key.replace('train/', '').replace('train_', '')
-                            training_metrics[clean_key] = value
-                        # Validation метрики (mAP, precision, recall и т.д.)
-                        elif any(x in key_lower for x in ['val', 'map', 'precision', 'recall', 'f1', 'metrics']):
-                            # Убираем префикс val/ или metrics/ если есть
-                            clean_key = key.replace('val/', '').replace('val_', '').replace('metrics/', '').replace('metrics_', '')
-                            validation_metrics[clean_key] = value
-                        # Если не определено, добавляем в обе категории для совместимости
-                        else:
-                            training_metrics[key] = value
-                    
-                    # Также пытаемся извлечь метрики из результатов валидации
-                    try:
-                        # Способ 1: Через validator.metrics (основной способ в Ultralytics)
-                        if hasattr(trainer_obj, 'validator') and trainer_obj.validator:
-                            validator = trainer_obj.validator
-                            if hasattr(validator, 'metrics'):
-                                val_metrics = validator.metrics
-                                if isinstance(val_metrics, dict):
-                                    for k, v in val_metrics.items():
-                                        if isinstance(v, (int, float)):
-                                            validation_metrics[k] = float(v)
-                                elif hasattr(val_metrics, 'box'):
-                                    box = val_metrics.box
-                                    if hasattr(box, 'map50'):
-                                        validation_metrics['mAP50'] = float(box.map50)
-                                    if hasattr(box, 'map'):
-                                        validation_metrics['mAP50-95'] = float(box.map)
-                                    if hasattr(box, 'mp'):
-                                        validation_metrics['precision'] = float(box.mp)
-                                    if hasattr(box, 'mr'):
-                                        validation_metrics['recall'] = float(box.mr)
-                        
-                        # Способ 2: Через results (результаты последней валидации)
-                        if hasattr(trainer_obj, 'results') and trainer_obj.results:
-                            results = trainer_obj.results
-                            if hasattr(results, 'box'):
-                                box = results.box
-                                if hasattr(box, 'map50'):
-                                    validation_metrics['mAP50'] = float(box.map50)
-                                if hasattr(box, 'map'):
-                                    validation_metrics['mAP50-95'] = float(box.map)
-                                if hasattr(box, 'mp'):
-                                    validation_metrics['precision'] = float(box.mp)
-                                if hasattr(box, 'mr'):
-                                    validation_metrics['recall'] = float(box.mr)
-                        
-                        # Способ 3: Через results_dict
-                        if hasattr(trainer_obj, 'results_dict') and trainer_obj.results_dict:
-                            results_dict = trainer_obj.results_dict
-                            # Извлекаем метрики валидации
-                            if 'metrics' in results_dict:
-                                for k, v in results_dict['metrics'].items():
-                                    if isinstance(v, (int, float)):
-                                        validation_metrics[k] = float(v)
-                            # Извлекаем mAP метрики
-                            if 'maps' in results_dict:
-                                maps = results_dict['maps']
-                                if isinstance(maps, (list, tuple)) and len(maps) >= 2:
-                                    validation_metrics['mAP50-95'] = float(maps[0]) if maps[0] is not None else 0.0
-                                    validation_metrics['mAP50'] = float(maps[1]) if maps[1] is not None else 0.0
-                                elif isinstance(maps, dict):
-                                    for k, v in maps.items():
-                                        if isinstance(v, (int, float)):
-                                            validation_metrics[f'mAP{k}'] = float(v)
-                        
-                        # Способ 4: Прямой доступ к метрикам из trainer.metrics (может содержать val_* префиксы)
-                        if isinstance(raw_metrics, dict):
-                            for key, value in raw_metrics.items():
-                                key_lower = key.lower()
-                                # Ищем метрики валидации с префиксами val_ или metrics/
-                                if any(prefix in key_lower for prefix in ['val_map', 'val_precision', 'val_recall', 'metrics/map', 'metrics/precision', 'metrics/recall']):
-                                    clean_key = key.replace('val_', '').replace('val/', '').replace('metrics/', '').replace('metrics_', '')
-                                    if isinstance(value, (int, float)):
-                                        validation_metrics[clean_key] = float(value)
-                        
-                        # Способ 5: Через last (последние результаты)
-                        if hasattr(trainer_obj, 'last') and trainer_obj.last:
-                            last = trainer_obj.last
-                            if hasattr(last, 'box'):
-                                box = last.box
-                                if hasattr(box, 'map50'):
-                                    validation_metrics['mAP50'] = float(box.map50)
-                                if hasattr(box, 'map'):
-                                    validation_metrics['mAP50-95'] = float(box.map)
-                                if hasattr(box, 'mp'):
-                                    validation_metrics['precision'] = float(box.mp)
-                                if hasattr(box, 'mr'):
-                                    validation_metrics['recall'] = float(box.mr)
-                        
-                        # Отладочная информация
-                        if not validation_metrics:
-                            logger.warning(f"Метрики валидации не найдены для эпохи {current_epoch}")
-                            logger.debug(f"Доступные атрибуты trainer: {dir(trainer_obj)[:20]}")
-                            if hasattr(trainer_obj, 'validator'):
-                                logger.debug(f"Validator доступен: {trainer_obj.validator is not None}")
-                                if trainer_obj.validator:
-                                    logger.debug(f"Validator атрибуты: {dir(trainer_obj.validator)[:20]}")
-                    except Exception as e:
-                        # Логируем ошибку для отладки
-                        logger.error(f"Ошибка извлечения метрик валидации: {e}", exc_info=True)
+                    # Learning rate
+                    if hasattr(trainer, 'lr'):
+                        lr = trainer.lr
+                        if isinstance(lr, (list, tuple)) and len(lr) > 0:
+                            training_metrics['lr'] = float(lr[0])
+                        elif isinstance(lr, (int, float)):
+                            training_metrics['lr'] = float(lr)
 
-                    # Эмитим метрики отдельно для training и validation
+                    # Эмитим метрики обучения
                     if training_metrics:
                         self.progress.training_metrics_updated.emit(current_epoch, training_metrics)
-                    
-                    if validation_metrics:
-                        self.progress.validation_metrics_updated.emit(current_epoch, validation_metrics)
 
-                    # Обновляем объединенные метрики для обратной совместимости
-                    if training_metrics or validation_metrics:
-                        combined_metrics = {**training_metrics, **validation_metrics}
-                        self.progress.current_metrics.update(combined_metrics)
-                        self.progress.metrics_updated.emit(combined_metrics.copy())
-
+                    # Обновляем прогресс
                     if total_epochs > 0:
                         progress_percent = max(0, min(100, int((current_epoch / total_epochs) * 100)))
                         self.progress.progress_updated.emit(progress_percent)
 
-                    # Строка статуса для инфо-окна
-                    status_parts = []
-                    if training_metrics:
-                        train_parts = [f"{k}={v:.4f}" for k, v in list(training_metrics.items())[:3]]
-                        status_parts.append(f"Train: {' '.join(train_parts)}")
-                    if validation_metrics:
-                        val_parts = [f"{k}={v:.4f}" for k, v in list(validation_metrics.items())[:3]]
-                        status_parts.append(f"Val: {' '.join(val_parts)}")
-                    
-                    status_line = f"Эпоха {current_epoch}/{total_epochs} " + (" | ".join(status_parts) if status_parts else "")
+                    # Статус
+                    status_parts = [f"{k}={v:.4f}" for k, v in list(training_metrics.items())[:3]]
+                    status_line = f"Эпоха {current_epoch}/{total_epochs} Train: {' '.join(status_parts)}"
                     self.progress.status_updated.emit(status_line)
                 except Exception as e:
-                    # Логируем ошибку, но не мешаем обучению
-                    logger.error(f"Ошибка извлечения метрик: {e}", exc_info=True)
+                    logger.error(f"Ошибка в on_train_epoch_end: {e}", exc_info=True)
 
-            def _on_train_start(trainer_obj):
-                self.progress.status_updated.emit("Старт обучения модели")
-
-            def _on_train_end(trainer_obj):
-                self.progress.status_updated.emit("Обучение завершено, сохранение результатов...")
-            
-            def _on_val_end(trainer_obj):
-                """Коллбек после завершения валидации - извлекаем метрики валидации"""
+            def _on_val_end(trainer):
+                """Стандартный коллбек Ultralytics после завершения валидации"""
                 try:
-                    current_epoch = int(getattr(trainer_obj, 'epoch', 0)) + 1
+                    current_epoch = int(getattr(trainer, 'epoch', 0)) + 1
                     validation_metrics = {}
                     
-                    # Извлекаем метрики валидации из validator
-                    if hasattr(trainer_obj, 'validator') and trainer_obj.validator:
-                        validator = trainer_obj.validator
-                        if hasattr(validator, 'metrics'):
-                            val_metrics = validator.metrics
-                            if isinstance(val_metrics, dict):
-                                for k, v in val_metrics.items():
-                                    if isinstance(v, (int, float)):
-                                        validation_metrics[k] = float(v)
-                            elif hasattr(val_metrics, 'box'):
-                                box = val_metrics.box
+                    # Используем стандартные результаты валидации Ultralytics
+                    if hasattr(trainer, 'metrics') and trainer.metrics:
+                        metrics = trainer.metrics
+                        
+                        # Стандартные метрики валидации из results.box
+                        if hasattr(metrics, 'box'):
+                            box = metrics.box
+                            if hasattr(box, 'map50'):
+                                validation_metrics['mAP50'] = float(box.map50)
+                            if hasattr(box, 'map'):
+                                validation_metrics['mAP50-95'] = float(box.map)
+                            if hasattr(box, 'mp'):
+                                validation_metrics['precision'] = float(box.mp)
+                            if hasattr(box, 'mr'):
+                                validation_metrics['recall'] = float(box.mr)
+                        
+                        # Метрики сегментации (если есть)
+                        if hasattr(metrics, 'seg'):
+                            seg = metrics.seg
+                            if hasattr(seg, 'map50'):
+                                validation_metrics['seg_mAP50'] = float(seg.map50)
+                            if hasattr(seg, 'map'):
+                                validation_metrics['seg_mAP50-95'] = float(seg.map)
+                    
+                    # Альтернативный способ через validator
+                    elif hasattr(trainer, 'validator') and trainer.validator:
+                        validator = trainer.validator
+                        if hasattr(validator, 'metrics') and validator.metrics:
+                            metrics = validator.metrics
+                            if hasattr(metrics, 'box'):
+                                box = metrics.box
                                 if hasattr(box, 'map50'):
                                     validation_metrics['mAP50'] = float(box.map50)
                                 if hasattr(box, 'map'):
@@ -790,28 +684,30 @@ class TrainingThread(QThread):
                                 if hasattr(box, 'mr'):
                                     validation_metrics['recall'] = float(box.mr)
                     
-                    # Также проверяем results
-                    if hasattr(trainer_obj, 'results') and trainer_obj.results:
-                        results = trainer_obj.results
-                        if hasattr(results, 'box'):
-                            box = results.box
-                            if 'mAP50' not in validation_metrics and hasattr(box, 'map50'):
-                                validation_metrics['mAP50'] = float(box.map50)
-                            if 'mAP50-95' not in validation_metrics and hasattr(box, 'map'):
-                                validation_metrics['mAP50-95'] = float(box.map)
-                            if 'precision' not in validation_metrics and hasattr(box, 'mp'):
-                                validation_metrics['precision'] = float(box.mp)
-                            if 'recall' not in validation_metrics and hasattr(box, 'mr'):
-                                validation_metrics['recall'] = float(box.mr)
-                    
                     # Эмитим метрики валидации
                     if validation_metrics:
                         self.progress.validation_metrics_updated.emit(current_epoch, validation_metrics)
-                        logger.debug(f"Метрики валидации для эпохи {current_epoch}: {validation_metrics}")
-                    else:
-                        logger.warning(f"Метрики валидации не найдены в on_val_end для эпохи {current_epoch}")
+                        
+                        # Обновляем объединенные метрики для обратной совместимости
+                        combined_metrics = self.progress.current_metrics.copy()
+                        combined_metrics.update(validation_metrics)
+                        self.progress.current_metrics = combined_metrics
+                        self.progress.metrics_updated.emit(combined_metrics)
+                        
+                        # Обновляем статус
+                        val_parts = [f"{k}={v:.4f}" for k, v in list(validation_metrics.items())[:3]]
+                        status_line = f"Эпоха {current_epoch} Val: {' '.join(val_parts)}"
+                        self.progress.status_updated.emit(status_line)
                 except Exception as e:
                     logger.error(f"Ошибка в on_val_end: {e}", exc_info=True)
+
+            def _on_train_start(trainer):
+                """Стандартный коллбек Ultralytics при старте обучения"""
+                self.progress.status_updated.emit("Старт обучения модели")
+
+            def _on_train_end(trainer):
+                """Стандартный коллбек Ultralytics при завершении обучения"""
+                self.progress.status_updated.emit("Обучение завершено, сохранение результатов...")
 
             # Коллбек с частой проверкой отмены перед эпохой и перед батчем
             def _on_fit_epoch_start(trainer_obj):
@@ -845,15 +741,18 @@ class TrainingThread(QThread):
                 except Exception:
                     pass
 
+            # Регистрируем стандартные коллбеки Ultralytics
             try:
-                model.add_callback('on_fit_epoch_end', _on_fit_epoch_end)
-                model.add_callback('on_fit_epoch_start', _on_fit_epoch_start)
-                model.add_callback('on_train_batch_start', _on_train_batch_start)
+                # Стандартные коллбеки Ultralytics
+                model.add_callback('on_train_epoch_end', _on_train_epoch_end)
+                model.add_callback('on_val_end', _on_val_end)
                 model.add_callback('on_train_start', _on_train_start)
                 model.add_callback('on_train_end', _on_train_end)
-                model.add_callback('on_val_end', _on_val_end)  # Коллбек после валидации
+                
+                # Коллбеки для отмены обучения
+                model.add_callback('on_fit_epoch_start', _on_fit_epoch_start)
+                model.add_callback('on_train_batch_start', _on_train_batch_start)
             except Exception as e:
-                # Если API коллбеков недоступен, просто продолжаем без онлайновых метрик
                 logger.warning(f"Не удалось добавить некоторые коллбеки: {e}")
             
             # Простой запуск без сложных callback'ов
@@ -947,7 +846,7 @@ class ModelValidator:
             # Загружаем модель
             model = YOLO(model_path)
             
-            # Запускаем валидацию
+            # Используем стандартный метод валидации Ultralytics
             results = model.val(
                 data=os.path.join(dataset_path, 'dataset.yaml'),
                 conf=conf_threshold,
@@ -961,7 +860,7 @@ class ModelValidator:
                 workers=0         # без дополнительных процессов/окон в Windows
             )
             
-            # Извлекаем метрики
+            # Извлекаем метрики из стандартных результатов валидации Ultralytics
             validation_results = {
                 'model_path': model_path,
                 'dataset_path': dataset_path,
@@ -969,24 +868,54 @@ class ModelValidator:
                 'conf_threshold': conf_threshold,
                 'iou_threshold': iou_threshold,
                 'max_det': max_det,
-                'metrics': {
-                    'mAP50': float(results.box.map50) if hasattr(results.box, 'map50') else 0.0,
-                    'mAP50-95': float(results.box.map) if hasattr(results.box, 'map') else 0.0,
-                    'precision': float(results.box.mp) if hasattr(results.box, 'mp') else 0.0,
-                    'recall': float(results.box.mr) if hasattr(results.box, 'mr') else 0.0,
-                },
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Добавляем метрики по классам если доступны
-            if hasattr(results.box, 'ap_class_index') and hasattr(results.box, 'ap'):
-                validation_results['class_metrics'] = {}
-                for i, class_idx in enumerate(results.box.ap_class_index):
-                    if i < len(results.box.ap):
-                        validation_results['class_metrics'][int(class_idx)] = {
-                            'mAP50': float(results.box.ap50[i]) if hasattr(results.box, 'ap50') and i < len(results.box.ap50) else 0.0,
-                            'mAP50-95': float(results.box.ap[i]) if i < len(results.box.ap) else 0.0
-                        }
+            # Используем стандартные метрики из results.box (детекция) или results.seg (сегментация)
+            metrics = {}
+            if task == 'detect' and hasattr(results, 'box') and results.box:
+                box = results.box
+                metrics = {
+                    'mAP50': float(box.map50) if hasattr(box, 'map50') else 0.0,
+                    'mAP50-95': float(box.map) if hasattr(box, 'map') else 0.0,
+                    'precision': float(box.mp) if hasattr(box, 'mp') else 0.0,
+                    'recall': float(box.mr) if hasattr(box, 'mr') else 0.0,
+                }
+                
+                # Метрики по классам из стандартных атрибутов
+                if hasattr(box, 'ap_class_index') and hasattr(box, 'ap'):
+                    class_metrics = {}
+                    for i, class_idx in enumerate(box.ap_class_index):
+                        if i < len(box.ap):
+                            class_metrics[int(class_idx)] = {
+                                'mAP50': float(box.ap50[i]) if hasattr(box, 'ap50') and i < len(box.ap50) else 0.0,
+                                'mAP50-95': float(box.ap[i]) if i < len(box.ap) else 0.0
+                            }
+                    if class_metrics:
+                        validation_results['class_metrics'] = class_metrics
+            
+            elif task == 'segment' and hasattr(results, 'seg') and results.seg:
+                seg = results.seg
+                metrics = {
+                    'mAP50': float(seg.map50) if hasattr(seg, 'map50') else 0.0,
+                    'mAP50-95': float(seg.map) if hasattr(seg, 'map') else 0.0,
+                    'precision': float(seg.mp) if hasattr(seg, 'mp') else 0.0,
+                    'recall': float(seg.mr) if hasattr(seg, 'mr') else 0.0,
+                }
+                
+                # Метрики по классам для сегментации
+                if hasattr(seg, 'ap_class_index') and hasattr(seg, 'ap'):
+                    class_metrics = {}
+                    for i, class_idx in enumerate(seg.ap_class_index):
+                        if i < len(seg.ap):
+                            class_metrics[int(class_idx)] = {
+                                'mAP50': float(seg.ap50[i]) if hasattr(seg, 'ap50') and i < len(seg.ap50) else 0.0,
+                                'mAP50-95': float(seg.ap[i]) if i < len(seg.ap) else 0.0
+                            }
+                    if class_metrics:
+                        validation_results['class_metrics'] = class_metrics
+            
+            validation_results['metrics'] = metrics
             
             self.validation_results = validation_results
             return validation_results

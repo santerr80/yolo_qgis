@@ -200,7 +200,7 @@ class AdvancedValidator:
     
     def _analyze_confidence_thresholds(self, model_path: str, dataset_path: str, 
                                      task: str, thresholds: List[float], output_dir: str) -> Dict:
-        """Анализирует влияние порогов уверенности на метрики"""
+        """Анализирует влияние порогов уверенности на метрики используя стандартные методы Ultralytics"""
         try:
             try:
                 from ultralytics import YOLO
@@ -211,6 +211,7 @@ class AdvancedValidator:
             results = {}
             
             for conf in thresholds:
+                # Используем стандартный метод валидации Ultralytics
                 val_results = model.val(
                     data=os.path.join(dataset_path, 'dataset.yaml'),
                     conf=conf,
@@ -222,12 +223,26 @@ class AdvancedValidator:
                     workers=0
                 )
                 
-                results[conf] = {
-                    'mAP50': float(val_results.box.map50) if hasattr(val_results.box, 'map50') else 0.0,
-                    'mAP50-95': float(val_results.box.map) if hasattr(val_results.box, 'map') else 0.0,
-                    'precision': float(val_results.box.mp) if hasattr(val_results.box, 'mp') else 0.0,
-                    'recall': float(val_results.box.mr) if hasattr(val_results.box, 'mr') else 0.0,
-                }
+                # Извлекаем метрики из стандартных результатов
+                metrics = {}
+                if task == 'detect' and hasattr(val_results, 'box') and val_results.box:
+                    box = val_results.box
+                    metrics = {
+                        'mAP50': float(box.map50) if hasattr(box, 'map50') else 0.0,
+                        'mAP50-95': float(box.map) if hasattr(box, 'map') else 0.0,
+                        'precision': float(box.mp) if hasattr(box, 'mp') else 0.0,
+                        'recall': float(box.mr) if hasattr(box, 'mr') else 0.0,
+                    }
+                elif task == 'segment' and hasattr(val_results, 'seg') and val_results.seg:
+                    seg = val_results.seg
+                    metrics = {
+                        'mAP50': float(seg.map50) if hasattr(seg, 'map50') else 0.0,
+                        'mAP50-95': float(seg.map) if hasattr(seg, 'map') else 0.0,
+                        'precision': float(seg.mp) if hasattr(seg, 'mp') else 0.0,
+                        'recall': float(seg.mr) if hasattr(seg, 'mr') else 0.0,
+                    }
+                
+                results[conf] = metrics
             
             return results
             
@@ -236,7 +251,7 @@ class AdvancedValidator:
     
     def _analyze_iou_thresholds(self, model_path: str, dataset_path: str, 
                               task: str, thresholds: List[float], output_dir: str) -> Dict:
-        """Анализирует влияние порогов IoU на метрики"""
+        """Анализирует влияние порогов IoU на метрики используя стандартные методы Ultralytics"""
         try:
             try:
                 from ultralytics import YOLO
@@ -247,6 +262,7 @@ class AdvancedValidator:
             results = {}
             
             for iou in thresholds:
+                # Используем стандартный метод валидации Ultralytics
                 val_results = model.val(
                     data=os.path.join(dataset_path, 'dataset.yaml'),
                     conf=0.25,
@@ -258,12 +274,26 @@ class AdvancedValidator:
                     workers=0
                 )
                 
-                results[iou] = {
-                    'mAP50': float(val_results.box.map50) if hasattr(val_results.box, 'map50') else 0.0,
-                    'mAP50-95': float(val_results.box.map) if hasattr(val_results.box, 'map') else 0.0,
-                    'precision': float(val_results.box.mp) if hasattr(val_results.box, 'mp') else 0.0,
-                    'recall': float(val_results.box.mr) if hasattr(val_results.box, 'mr') else 0.0,
-                }
+                # Извлекаем метрики из стандартных результатов
+                metrics = {}
+                if task == 'detect' and hasattr(val_results, 'box') and val_results.box:
+                    box = val_results.box
+                    metrics = {
+                        'mAP50': float(box.map50) if hasattr(box, 'map50') else 0.0,
+                        'mAP50-95': float(box.map) if hasattr(box, 'map') else 0.0,
+                        'precision': float(box.mp) if hasattr(box, 'mp') else 0.0,
+                        'recall': float(box.mr) if hasattr(box, 'mr') else 0.0,
+                    }
+                elif task == 'segment' and hasattr(val_results, 'seg') and val_results.seg:
+                    seg = val_results.seg
+                    metrics = {
+                        'mAP50': float(seg.map50) if hasattr(seg, 'map50') else 0.0,
+                        'mAP50-95': float(seg.map) if hasattr(seg, 'map') else 0.0,
+                        'precision': float(seg.mp) if hasattr(seg, 'mp') else 0.0,
+                        'recall': float(seg.mr) if hasattr(seg, 'mr') else 0.0,
+                    }
+                
+                results[iou] = metrics
             
             return results
             
@@ -272,7 +302,7 @@ class AdvancedValidator:
     
     def _analyze_class_performance(self, model_path: str, dataset_path: str, 
                                  task: str, output_dir: str) -> Dict:
-        """Анализирует производительность по классам"""
+        """Анализирует производительность по классам используя стандартные методы Ultralytics"""
         try:
             try:
                 from ultralytics import YOLO
@@ -280,6 +310,7 @@ class AdvancedValidator:
                 return {'error': 'ultralytics не установлен'}
             
             model = YOLO(model_path)
+            # Используем стандартный метод валидации Ultralytics
             val_results = model.val(
                 data=os.path.join(dataset_path, 'dataset.yaml'),
                 conf=0.25,
@@ -293,16 +324,25 @@ class AdvancedValidator:
             
             class_analysis = {}
             
-            if hasattr(val_results.box, 'ap_class_index') and hasattr(val_results.box, 'ap'):
-                for i, class_idx in enumerate(val_results.box.ap_class_index):
-                    if i < len(val_results.box.ap):
-                        class_analysis[int(class_idx)] = {
-                            'mAP50': float(val_results.box.ap50[i]) if hasattr(val_results.box, 'ap50') and i < len(val_results.box.ap50) else 0.0,
-                            'mAP50-95': float(val_results.box.ap[i]) if i < len(val_results.box.ap) else 0.0,
-                            'precision': 0.0,  # Требует дополнительных вычислений
-                            'recall': 0.0,     # Требует дополнительных вычислений
-                            'f1_score': 0.0    # Требует дополнительных вычислений
-                        }
+            # Извлекаем метрики по классам из стандартных результатов
+            if task == 'detect' and hasattr(val_results, 'box') and val_results.box:
+                box = val_results.box
+                if hasattr(box, 'ap_class_index') and hasattr(box, 'ap'):
+                    for i, class_idx in enumerate(box.ap_class_index):
+                        if i < len(box.ap):
+                            class_analysis[int(class_idx)] = {
+                                'mAP50': float(box.ap50[i]) if hasattr(box, 'ap50') and i < len(box.ap50) else 0.0,
+                                'mAP50-95': float(box.ap[i]) if i < len(box.ap) else 0.0,
+                            }
+            elif task == 'segment' and hasattr(val_results, 'seg') and val_results.seg:
+                seg = val_results.seg
+                if hasattr(seg, 'ap_class_index') and hasattr(seg, 'ap'):
+                    for i, class_idx in enumerate(seg.ap_class_index):
+                        if i < len(seg.ap):
+                            class_analysis[int(class_idx)] = {
+                                'mAP50': float(seg.ap50[i]) if hasattr(seg, 'ap50') and i < len(seg.ap50) else 0.0,
+                                'mAP50-95': float(seg.ap[i]) if i < len(seg.ap) else 0.0,
+                            }
             
             return class_analysis
             
