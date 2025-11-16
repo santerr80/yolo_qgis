@@ -29,13 +29,30 @@ from .dataset_formatter_yolo import save_yolo_native_dataset # <--- ДОБАВЛ
 from .processing_utils import ProgressReporter
 from .dataset_manager_dialog import DatasetManagerDialog
 from .dataset_manager import DatasetManager
+from .path_history_manager import PathHistoryManager
 
 # --- ИМПОРТ МОДУЛЕЙ ТРЕНИРОВКИ ---
-from .yolo_training_manager import YOLOTrainingManager, TrainingConfigManager
-from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
-from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetAnalyzer
-from .yolo_validation import AdvancedValidator, ModelComparator
-from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
+try:
+    from .yolo_training_manager import YOLOTrainingManager, TrainingConfigManager
+    from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
+    from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetAnalyzer
+    from .yolo_validation import AdvancedValidator, ModelComparator
+    from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
+    TRAINING_MODULES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Модули тренировки не доступны: {e}")
+    TRAINING_MODULES_AVAILABLE = False
+    # Создаем заглушки для избежания ошибок
+    YOLOTrainingManager = None
+    TrainingConfigManager = None
+    DetectionTrainer = None
+    DetectionDatasetAnalyzer = None
+    SegmentationTrainer = None
+    SegmentationDatasetAnalyzer = None
+    AdvancedValidator = None
+    ModelComparator = None
+    MetricsTracker = None
+    MetricsVisualizer = None
 
 
 
@@ -57,8 +74,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         self.current_experiment_id = None
         self.is_training = False
         
+        # Инициализация менеджера истории путей
+        self.path_history_manager = PathHistoryManager(max_history=10)
+        
         self._setup_connections()
         self._initialize_training_components()
+        self._setup_path_history_buttons()
 
     def _setup_connections(self):
         """Настройка всех сигналов и слотов."""
@@ -188,6 +209,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             
             if not all([output_dir, objects_layer, classes_field]):
                 raise ValueError("Необходимо заполнить все поля в группе 'Setup'.")
+            
+            # Сохраняем путь к датасету в историю
+            self.path_history_manager.add_dataset_path(output_dir)
             
             # В режиме обновления проверяем, есть ли существующий датасет в указанной директории
             if is_update_mode:
@@ -404,6 +428,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
     
     def _initialize_training_components(self):
         """Инициализирует компоненты системы тренировки"""
+        if not TRAINING_MODULES_AVAILABLE:
+            logger.warning("Модули тренировки не доступны. Функции обучения будут отключены.")
+            self.training_manager = None
+            self.config_manager = None
+            return
+        
         try:
             # Создаем менеджер тренировки
             self.training_manager = YOLOTrainingManager()
@@ -426,6 +456,8 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             logger.error(f"Ошибка инициализации компонентов тренировки: {e}", exc_info=True)
             QtWidgets.QMessageBox.warning(self, "Предупреждение", 
                                         f"Некоторые функции тренировки могут быть недоступны: {e}")
+            self.training_manager = None
+            self.config_manager = None
     
     def _setup_training_connections(self):
         """Настраивает соединения для интерфейса тренировки"""
@@ -519,9 +551,168 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             logger.error(f"Ошибка обновления типа задачи: {e}", exc_info=True)
     
+    def _setup_path_history_buttons(self):
+        """Настраивает кнопки для выбора из истории путей"""
+        try:
+            from qgis.PyQt.QtWidgets import QPushButton, QMenu
+            
+            # Создаем кнопку для истории датасетов
+            if hasattr(self, 'fileWidgetDataset') and hasattr(self, 'gridLayout_dataset'):
+                self.btnDatasetHistory = QPushButton("📁")
+                self.btnDatasetHistory.setToolTip("Выбрать из истории датасетов")
+                self.btnDatasetHistory.setMaximumWidth(30)
+                self.btnDatasetHistory.clicked.connect(self._show_dataset_history_menu)
+                
+                # Добавляем кнопку в layout рядом с fileWidgetDataset (строка 0, колонка 2)
+                self.gridLayout_dataset.addWidget(self.btnDatasetHistory, 0, 2)
+            
+            # Создаем кнопку для истории проектов
+            if hasattr(self, 'fileWidgetSaveDir') and hasattr(self, 'gridLayout_output'):
+                self.btnProjectHistory = QPushButton("📁")
+                self.btnProjectHistory.setToolTip("Выбрать из истории проектов")
+                self.btnProjectHistory.setMaximumWidth(30)
+                self.btnProjectHistory.clicked.connect(self._show_project_history_menu)
+                
+                # Добавляем кнопку в layout рядом с fileWidgetSaveDir (строка 1, колонка 2)
+                self.gridLayout_output.addWidget(self.btnProjectHistory, 1, 2)
+                            
+        except Exception as e:
+            logger.error(f"Ошибка настройки кнопок истории путей: {e}", exc_info=True)
+    
+    def _show_dataset_history_menu(self):
+        """Показывает меню с историей путей к датасетам"""
+        try:
+            from qgis.PyQt.QtWidgets import QMenu, QAction
+            
+            history = self.path_history_manager.get_dataset_paths()
+            
+            if not history:
+                QtWidgets.QMessageBox.information(
+                    self, "История путей", 
+                    "История путей к датасетам пуста.\nВыберите путь, и он будет сохранен в истории."
+                )
+                return
+            
+            menu = QMenu(self)
+            
+            # Добавляем действия для каждого пути
+            for path in history:
+                # Обрезаем путь, если он слишком длинный
+                display_path = path
+                if len(display_path) > 60:
+                    display_path = "..." + display_path[-57:]
+                
+                action = QAction(display_path, self)
+                action.setToolTip(path)
+                action.triggered.connect(lambda checked, p=path: self._select_dataset_path(p))
+                menu.addAction(action)
+            
+            menu.addSeparator()
+            
+            # Добавляем действие для очистки истории
+            clear_action = QAction("Очистить историю", self)
+            clear_action.triggered.connect(self._clear_dataset_history)
+            menu.addAction(clear_action)
+            
+            # Показываем меню под кнопкой
+            button_pos = self.btnDatasetHistory.mapToGlobal(self.btnDatasetHistory.rect().bottomLeft())
+            menu.exec_(button_pos)
+            
+        except Exception as e:
+            logger.error(f"Ошибка показа меню истории датасетов: {e}", exc_info=True)
+    
+    def _show_project_history_menu(self):
+        """Показывает меню с историей путей к проектам"""
+        try:
+            from qgis.PyQt.QtWidgets import QMenu, QAction
+            
+            history = self.path_history_manager.get_project_paths()
+            
+            if not history:
+                QtWidgets.QMessageBox.information(
+                    self, "История путей", 
+                    "История путей к проектам пуста.\nВыберите путь, и он будет сохранен в истории."
+                )
+                return
+            
+            menu = QMenu(self)
+            
+            # Добавляем действия для каждого пути
+            for path in history:
+                # Обрезаем путь, если он слишком длинный
+                display_path = path
+                if len(display_path) > 60:
+                    display_path = "..." + display_path[-57:]
+                
+                action = QAction(display_path, self)
+                action.setToolTip(path)
+                action.triggered.connect(lambda checked, p=path: self._select_project_path(p))
+                menu.addAction(action)
+            
+            menu.addSeparator()
+            
+            # Добавляем действие для очистки истории
+            clear_action = QAction("Очистить историю", self)
+            clear_action.triggered.connect(self._clear_project_history)
+            menu.addAction(clear_action)
+            
+            # Показываем меню под кнопкой
+            button_pos = self.btnProjectHistory.mapToGlobal(self.btnProjectHistory.rect().bottomLeft())
+            menu.exec_(button_pos)
+            
+        except Exception as e:
+            logger.error(f"Ошибка показа меню истории проектов: {e}", exc_info=True)
+    
+    def _select_dataset_path(self, path: str):
+        """Выбирает путь к датасету из истории"""
+        try:
+            if hasattr(self, 'fileWidgetDataset'):
+                self.fileWidgetDataset.setFilePath(path)
+        except Exception as e:
+            logger.error(f"Ошибка выбора пути к датасету: {e}", exc_info=True)
+    
+    def _select_project_path(self, path: str):
+        """Выбирает путь к проекту из истории"""
+        try:
+            if hasattr(self, 'fileWidgetSaveDir'):
+                self.fileWidgetSaveDir.setFilePath(path)
+        except Exception as e:
+            logger.error(f"Ошибка выбора пути к проекту: {e}", exc_info=True)
+    
+    def _clear_dataset_history(self):
+        """Очищает историю путей к датасетам"""
+        reply = QtWidgets.QMessageBox.question(
+            self, "Очистить историю",
+            "Вы уверены, что хотите очистить историю путей к датасетам?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.path_history_manager.clear_dataset_history()
+            QtWidgets.QMessageBox.information(self, "История очищена", "История путей к датасетам очищена.")
+    
+    def _clear_project_history(self):
+        """Очищает историю путей к проектам"""
+        reply = QtWidgets.QMessageBox.question(
+            self, "Очистить историю",
+            "Вы уверены, что хотите очистить историю путей к проектам?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.path_history_manager.clear_project_history()
+            QtWidgets.QMessageBox.information(self, "История очищена", "История путей к проектам очищена.")
+    
     def _start_training(self):
         """Запускает процесс тренировки"""
         try:
+            if not self.training_manager:
+                QtWidgets.QMessageBox.warning(
+                    self, "Ошибка", 
+                    "Модули тренировки не доступны. Установите ultralytics: pip install ultralytics"
+                )
+                return
+            
             if self.is_training:
                 QtWidgets.QMessageBox.warning(self, "Предупреждение", "Тренировка уже выполняется!")
                 return
@@ -561,6 +752,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Выходные параметры
             project_name = self.lineEditProjectName.text() or "yolo_training"
             save_dir = self.fileWidgetSaveDir.filePath()
+            
+            # Сохраняем пути в историю
+            self.path_history_manager.add_dataset_path(dataset_path)
+            if save_dir:
+                self.path_history_manager.add_project_path(save_dir)
             
             # Запускаем тренировку
             if task == "detect":
@@ -610,11 +806,25 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if self.current_experiment_id and self.training_manager:
                 success = self.training_manager.cancel_training(self.current_experiment_id)
                 if success:
+                    # Обновляем состояние интерфейса
+                    self.is_training = False
+                    self.pushButtonStartTraining.setEnabled(True)
+                    self.pushButtonStopTraining.setEnabled(False)
                     self.labelTrainingStatus.setText("Тренировка остановлена")
                     self.textEditTrainingLog.append("Тренировка остановлена пользователем")
                 else:
                     QtWidgets.QMessageBox.warning(self, "Предупреждение", "Не удалось остановить тренировку")
+            else:
+                # Если нет активного эксперимента, просто обновляем состояние кнопок
+                self.is_training = False
+                self.pushButtonStartTraining.setEnabled(True)
+                self.pushButtonStopTraining.setEnabled(False)
+                self.labelTrainingStatus.setText("Тренировка остановлена")
         except Exception as e:
+            # В случае ошибки все равно обновляем состояние кнопок
+            self.is_training = False
+            self.pushButtonStartTraining.setEnabled(True)
+            self.pushButtonStopTraining.setEnabled(False)
             QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка остановки тренировки: {e}")
     
     def _analyze_dataset(self):
@@ -940,7 +1150,8 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.tableWidgetMetrics.setItem(row_count, 2, QtWidgets.QTableWidgetItem(f"{metrics.get('mAP50-95', 0):.4f}"))
             self.tableWidgetMetrics.setItem(row_count, 3, QtWidgets.QTableWidgetItem(f"{metrics.get('precision', 0):.4f}"))
             self.tableWidgetMetrics.setItem(row_count, 4, QtWidgets.QTableWidgetItem(f"{metrics.get('recall', 0):.4f}"))
-            self.tableWidgetMetrics.setItem(row_count, 5, QtWidgets.QTableWidgetItem(f"{metrics.get('loss', 0):.4f}"))
+            self.tableWidgetMetrics.setItem(row_count, 5, QtWidgets.QTableWidgetItem(f"{metrics.get('f1_score', 0):.4f}"))
+            self.tableWidgetMetrics.setItem(row_count, 6, QtWidgets.QTableWidgetItem(f"{metrics.get('loss', 0):.4f}"))
             
             # Прокручиваем к последней строке
             self.tableWidgetMetrics.scrollToBottom()
@@ -1004,11 +1215,20 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                             loss_value = value
                             break
                 
+                precision = validation_metrics.get('precision', 0.0)
+                recall = validation_metrics.get('recall', 0.0)
+                
+                # Вычисляем F1-score если его нет
+                f1_score = validation_metrics.get('f1_score', 0.0)
+                if f1_score == 0.0 and precision + recall > 0:
+                    f1_score = 2 * (precision * recall) / (precision + recall)
+                
                 row_metrics = {
                     'mAP50': validation_metrics.get('mAP50', 0.0),
                     'mAP50-95': validation_metrics.get('mAP50-95', validation_metrics.get('mAP50_95', validation_metrics.get('map', 0.0))),
-                    'precision': validation_metrics.get('precision', 0.0),
-                    'recall': validation_metrics.get('recall', 0.0),
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1_score,
                     'loss': loss_value
                 }
                 
@@ -1021,7 +1241,8 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.tableWidgetMetrics.setItem(row_count, 2, QtWidgets.QTableWidgetItem(f"{row_metrics['mAP50-95']:.4f}"))
                 self.tableWidgetMetrics.setItem(row_count, 3, QtWidgets.QTableWidgetItem(f"{row_metrics['precision']:.4f}"))
                 self.tableWidgetMetrics.setItem(row_count, 4, QtWidgets.QTableWidgetItem(f"{row_metrics['recall']:.4f}"))
-                self.tableWidgetMetrics.setItem(row_count, 5, QtWidgets.QTableWidgetItem(f"{row_metrics['loss']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 5, QtWidgets.QTableWidgetItem(f"{row_metrics['f1_score']:.4f}"))
+                self.tableWidgetMetrics.setItem(row_count, 6, QtWidgets.QTableWidgetItem(f"{row_metrics['loss']:.4f}"))
             
             # Прокручиваем к последней строке
             if self.tableWidgetMetrics.rowCount() > 0:

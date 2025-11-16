@@ -1,103 +1,109 @@
 # -*- coding: utf-8 -*-
 """
-Главный модуль для управления обучением и валидацией YOLO моделей
-Объединяет все компоненты системы
+Главный менеджер системы обучения YOLO моделей
+Объединяет все компоненты и предоставляет единый интерфейс
 """
 
 import os
 import json
-import uuid
 import logging
+import threading
+import uuid
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Optional, Any, Callable
 from pathlib import Path
 
-# Fix for NumPy stderr issue in QGIS environment
-from . import stderr_fix
+try:
+    from qgis.PyQt.QtCore import QObject, pyqtSignal
+except ImportError:
+    # Заглушка для случаев, когда QGIS не доступен
+    class QObject:
+        pass
+    
+    class _SignalStub:
+        """Заглушка для pyqtSignal"""
+        def __init__(self, *args):
+            self._args = args
+        
+        def connect(self, *args):
+            pass
+        
+        def emit(self, *args):
+            pass
+    
+    def pyqtSignal(*args):
+        """Фабрика для создания заглушек сигналов"""
+        return _SignalStub(*args)
 
-from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread
-from qgis.PyQt.QtWidgets import QMessageBox
-
-# Настройка логирования
-logger = logging.getLogger(__name__)
-
-from .yolo_trainer import YOLOTrainer, TrainingProgress
 from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
 from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetAnalyzer
 from .yolo_validation import AdvancedValidator, ModelComparator
-from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
+from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer, MetricsDatabase
+
+logger = logging.getLogger(__name__)
 
 
 class YOLOTrainingManager(QObject):
-    """Главный класс для управления обучением YOLO моделей"""
+    """Главный менеджер системы обучения"""
     
     # Сигналы для UI
     training_started = pyqtSignal(str)  # experiment_id
     training_progress = pyqtSignal(int, dict)  # epoch, metrics
     training_completed = pyqtSignal(str, bool, str)  # experiment_id, success, message
-    validation_started = pyqtSignal(str)  # experiment_id
     validation_completed = pyqtSignal(str, dict)  # experiment_id, results
-    status_message = pyqtSignal(str)  # произвольные статусные сообщения из тренера
+    status_message = pyqtSignal(str)  # message
     
-    def __init__(self, log_dir: str = None, db_path: str = None):
+    def __init__(self, log_dir: str = "logs", db_path: str = "yolo_metrics.db"):
+        """Инициализация менеджера
+        
+        Args:
+            log_dir: Директория для логов
+            db_path: Путь к базе данных метрик
+        """
         super().__init__()
         
-        # Инициализируем компоненты
-        self.metrics_tracker = MetricsTracker(log_dir, db_path)
-        self.validator = AdvancedValidator()
-        self.model_comparator = ModelComparator()
-        self.visualizer = MetricsVisualizer(self.metrics_tracker)
+        self.log_dir = log_dir
+        self.db_path = db_path
+        self.database = MetricsDatabase(db_path)
         
-        # Тренажеры для разных задач
-        self.detection_trainer = DetectionTrainer()
-        self.segmentation_trainer = SegmentationTrainer()
+        os.makedirs(log_dir, exist_ok=True)
         
-        # Подключаем сигналы
-        self._setup_signal_connections()
-        
-        # Текущие эксперименты
+        # Словарь активных экспериментов
         self.active_experiments = {}
+        self.experiment_threads = {}
     
-    def _setup_signal_connections(self):
-        """Настраивает соединения сигналов"""
-        # Подключаем сигналы от тренажеров
-        self.detection_trainer.progress.progress_updated.connect(self._on_progress_updated)
-        self.detection_trainer.progress.epoch_updated.connect(self._on_epoch_updated)
-        self.detection_trainer.progress.metrics_updated.connect(self._on_metrics_updated)
-        self.detection_trainer.progress.training_metrics_updated.connect(self._on_training_metrics_updated)
-        self.detection_trainer.progress.validation_metrics_updated.connect(self._on_validation_metrics_updated)
-        self.detection_trainer.progress.training_finished.connect(self._on_training_finished)
-        self.detection_trainer.progress.status_updated.connect(self._on_status_updated)
+    def start_detection_training(self, dataset_path: str, model_type: str = "yolov8n",
+                                epochs: int = 100, batch_size: int = 16,
+                                image_size: int = 640, learning_rate: float = 0.01,
+                                device: str = "cpu", pretrained: bool = True,
+                                save_dir: Optional[str] = None,
+                                project_name: str = "yolo_training",
+                                **augmentation_params) -> Optional[str]:
+        """Запускает обучение модели детекции
         
-        self.segmentation_trainer.progress.progress_updated.connect(self._on_progress_updated)
-        self.segmentation_trainer.progress.epoch_updated.connect(self._on_epoch_updated)
-        self.segmentation_trainer.progress.metrics_updated.connect(self._on_metrics_updated)
-        self.segmentation_trainer.progress.training_metrics_updated.connect(self._on_training_metrics_updated)
-        self.segmentation_trainer.progress.validation_metrics_updated.connect(self._on_validation_metrics_updated)
-        self.segmentation_trainer.progress.training_finished.connect(self._on_training_finished)
-        self.segmentation_trainer.progress.status_updated.connect(self._on_status_updated)
+        Args:
+            dataset_path: Путь к датасету
+            model_type: Тип модели (yolov8n, yolov8s, etc.)
+            epochs: Количество эпох
+            batch_size: Размер батча
+            image_size: Размер изображения
+            learning_rate: Скорость обучения
+            device: Устройство ('cpu' или '0' для GPU)
+            pretrained: Использовать предобученные веса
+            save_dir: Директория для сохранения
+            project_name: Имя проекта
+            **augmentation_params: Параметры аугментации
         
-        # Подключаем сигналы от трекера метрик
-        self.metrics_tracker.metrics_updated.connect(self._on_metrics_tracked)
-        self.metrics_tracker.experiment_completed.connect(self._on_experiment_completed)
-    
-    def _start_training_common(self, task: str, trainer, dataset_path: str,
-                               model_type: str, epochs: int, batch_size: int,
-                               image_size: int, learning_rate: float, device: str,
-                               pretrained: bool, save_dir: str, project_name: str,
-                               **kwargs) -> str:
-        """
-        Общий метод для запуска обучения (детекция или сегментация)
-        
-        :return: ID эксперимента
+        Returns:
+            ID эксперимента или None при ошибке
         """
         try:
             # Создаем ID эксперимента
             experiment_id = str(uuid.uuid4())
             
-            # Подготавливаем конфигурацию
+            # Сохраняем конфигурацию
             config = {
-                'task': task,
+                'task': 'detect',
                 'model_type': model_type,
                 'epochs': epochs,
                 'batch_size': batch_size,
@@ -105,386 +111,508 @@ class YOLOTrainingManager(QObject):
                 'learning_rate': learning_rate,
                 'device': device,
                 'pretrained': pretrained,
-                'dataset_path': dataset_path,
-                **kwargs
+                'augmentation': augmentation_params
             }
             
-            # Начинаем эксперимент в трекере метрик
-            task_name = 'Detection' if task == 'detect' else 'Segmentation'
-            experiment_name = project_name or f"{task_name}_{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.metrics_tracker.start_experiment(
-                experiment_id, experiment_name, task, model_type, dataset_path, config
+            # Добавляем в базу данных
+            self.database.add_experiment(
+                experiment_id=experiment_id,
+                name=project_name,
+                task='detect',
+                model_type=model_type,
+                config=config
             )
             
-            # Сохраняем информацию об эксперименте
+            # Создаем трекер метрик
+            metrics_tracker = MetricsTracker(
+                experiment_id=experiment_id,
+                db_path=self.db_path,
+                log_dir=self.log_dir
+            )
+            
+            # Запускаем обучение в отдельном потоке
+            thread = threading.Thread(
+                target=self._run_detection_training,
+                args=(experiment_id, dataset_path, model_type, epochs, batch_size,
+                     image_size, learning_rate, device, pretrained, save_dir,
+                     project_name, metrics_tracker, augmentation_params),
+                daemon=True
+            )
+            
             self.active_experiments[experiment_id] = {
-                'type': task,
-                'trainer': trainer,
-                'config': config,
-                'start_time': datetime.now()
+                'type': 'detection',
+                'status': 'running',
+                'config': config
             }
+            self.experiment_threads[experiment_id] = thread
             
-            # Сохраняем experiment_id в progress для удобного доступа
-            trainer.progress.experiment_id = experiment_id
+            thread.start()
             
-            # Запускаем обучение
-            if task == 'detect':
-                success = trainer.train_detection_model(
-                    dataset_path=dataset_path,
-                    model_type=model_type,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    image_size=image_size,
-                    learning_rate=learning_rate,
-                    device=device,
-                    pretrained=pretrained,
-                    save_dir=save_dir,
-                    project_name=project_name,
-                    **kwargs
-                )
-            else:
-                success = trainer.train_segmentation_model(
-                    dataset_path=dataset_path,
-                    model_type=model_type,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    image_size=image_size,
-                    learning_rate=learning_rate,
-                    device=device,
-                    pretrained=pretrained,
-                    save_dir=save_dir,
-                    project_name=project_name,
-                    **kwargs
-                )
+            # Отправляем сигнал о начале обучения
+            self.training_started.emit(experiment_id)
+            self.status_message.emit(f"Запущено обучение детекции: {project_name}")
             
-            if success:
-                self.training_started.emit(experiment_id)
-                return experiment_id
-            else:
-                # Удаляем неудачный эксперимент
-                if experiment_id in self.active_experiments:
-                    del self.active_experiments[experiment_id]
-                return None
-                
+            return experiment_id
+            
         except Exception as e:
-            logger.error(f"Ошибка запуска обучения {task}: {e}", exc_info=True)
+            logger.error(f"Ошибка запуска обучения детекции: {e}", exc_info=True)
             return None
     
-    def start_detection_training(self,
-                               dataset_path: str,
-                               model_type: str = 'yolov8n',
-                               epochs: int = 100,
-                               batch_size: int = 16,
-                               image_size: int = 640,
-                               learning_rate: float = 0.01,
-                               device: str = 'cpu',
-                               pretrained: bool = True,
-                               save_dir: str = None,
-                               project_name: str = None,
-                               resume_training: bool = False,
-                               **kwargs) -> str:
-        """
-        Запускает обучение модели детекции
+    def _run_detection_training(self, experiment_id: str, dataset_path: str,
+                               model_type: str, epochs: int, batch_size: int,
+                               image_size: int, learning_rate: float, device: str,
+                               pretrained: bool, save_dir: Optional[str],
+                               project_name: str, metrics_tracker: MetricsTracker,
+                               augmentation_params: Dict):
+        """Запускает обучение детекции в отдельном потоке"""
+        def log_callback(msg: str):
+            """Callback для логирования сообщений"""
+            self.status_message.emit(msg)
+            logger.info(f"[{experiment_id}] {msg}")
         
-        :return: ID эксперимента
-        """
-        return self._start_training_common(
-            task='detect',
-            trainer=self.detection_trainer,
-            dataset_path=dataset_path,
-            model_type=model_type,
-            epochs=epochs,
-            batch_size=batch_size,
-            image_size=image_size,
-            learning_rate=learning_rate,
-            device=device,
-            pretrained=pretrained,
-            save_dir=save_dir,
-            project_name=project_name,
-            resume_training=resume_training,
-            **kwargs
-        )
-    
-    def start_segmentation_training(self,
-                                  dataset_path: str,
-                                  model_type: str = 'yolov8n-seg',
-                                  epochs: int = 100,
-                                  batch_size: int = 16,
-                                  image_size: int = 640,
-                                  learning_rate: float = 0.01,
-                                  device: str = 'cpu',
-                                  pretrained: bool = True,
-                                  save_dir: str = None,
-                                  project_name: str = None,
-                                  resume_training: bool = False,
-                                  **kwargs) -> str:
-        """
-        Запускает обучение модели сегментации
+        def epoch_callback(epoch: int, metrics: Dict[str, float]):
+            """Callback для отслеживания прогресса эпох"""
+            try:
+                # Отправляем сигнал о прогрессе
+                self.training_progress.emit(epoch, metrics)
+                
+                # Сохраняем метрики в трекер
+                if metrics_tracker:
+                    metrics_tracker.log_metrics(epoch, 'validation', metrics)
+                
+                # Логируем информацию об эпохе
+                metrics_str = ", ".join([f"{k}={v:.4f}" for k, v in metrics.items()])
+                log_callback(f"Эпоха {epoch}/{epochs}: {metrics_str}")
+            except Exception as e:
+                logger.error(f"Ошибка в callback эпохи: {e}", exc_info=True)
         
-        :return: ID эксперимента
-        """
-        return self._start_training_common(
-            task='segment',
-            trainer=self.segmentation_trainer,
-            dataset_path=dataset_path,
-            model_type=model_type,
-            epochs=epochs,
-            batch_size=batch_size,
-            image_size=image_size,
-            learning_rate=learning_rate,
-            device=device,
-            pretrained=pretrained,
-            save_dir=save_dir,
-            project_name=project_name,
-            resume_training=resume_training,
-            **kwargs
-        )
-    
-    def validate_model(self,
-                      model_path: str,
-                      dataset_path: str,
-                      task: str = 'detect',
-                      experiment_id: str = None,
-                      comprehensive: bool = True) -> Dict:
-        """
-        Валидирует модель
-        
-        :param model_path: Путь к модели
-        :param dataset_path: Путь к датасету
-        :param task: Тип задачи
-        :param experiment_id: ID эксперимента (если связан с обучением)
-        :param comprehensive: Выполнять ли комплексную валидацию
-        :return: Результаты валидации
-        """
         try:
-            if experiment_id:
-                self.validation_started.emit(experiment_id)
+            # Создаем тренер
+            log_callback("Инициализация тренера...")
+            trainer = DetectionTrainer(model_type=model_type, device=device)
+            log_callback(f"Загрузка модели {model_type}...")
+            trainer.load_model(pretrained=pretrained)
+            log_callback("Модель загружена успешно")
             
-            if comprehensive:
-                # Комплексная валидация
-                results = self.validator.comprehensive_validation(
-                    model_path=model_path,
-                    dataset_path=dataset_path,
-                    task=task
+            # Запускаем обучение
+            result = trainer.train(
+                dataset_path=dataset_path,
+                epochs=epochs,
+                batch_size=batch_size,
+                image_size=image_size,
+                learning_rate=learning_rate,
+                save_dir=save_dir,
+                project_name=project_name,
+                callback=log_callback,
+                epoch_callback=epoch_callback,
+                **augmentation_params
+            )
+            
+            if result.get('success'):
+                # Обновляем статус
+                self.database.update_experiment_status(
+                    experiment_id=experiment_id,
+                    status='completed',
+                    completed_at=datetime.now().isoformat()
+                )
+                self.active_experiments[experiment_id]['status'] = 'completed'
+                
+                # Отправляем сигнал о завершении
+                self.training_completed.emit(
+                    experiment_id,
+                    True,
+                    f"Обучение завершено. Модель: {result.get('model_path', 'N/A')}"
                 )
             else:
-                # Простая валидация
-                if task == 'detect':
-                    results = self.detection_trainer.validate_detection_model(
-                        model_path, dataset_path
-                    )
-                else:
-                    results = self.segmentation_trainer.validate_segmentation_model(
-                        model_path, dataset_path
-                    )
+                # Обновляем статус с ошибкой
+                error_msg = result.get('error', 'Неизвестная ошибка')
+                self.database.update_experiment_status(
+                    experiment_id=experiment_id,
+                    status='failed'
+                )
+                self.active_experiments[experiment_id]['status'] = 'failed'
+                
+                # Отправляем сигнал об ошибке
+                self.training_completed.emit(experiment_id, False, error_msg)
+                
+        except Exception as e:
+            logger.error(f"Ошибка в потоке обучения детекции: {e}", exc_info=True)
+            self.database.update_experiment_status(
+                experiment_id=experiment_id,
+                status='failed'
+            )
+            self.active_experiments[experiment_id]['status'] = 'failed'
+            self.training_completed.emit(experiment_id, False, str(e))
+    
+    def start_segmentation_training(self, dataset_path: str, model_type: str = "yolov8n-seg",
+                                   epochs: int = 100, batch_size: int = 16,
+                                   image_size: int = 640, learning_rate: float = 0.01,
+                                   device: str = "cpu", pretrained: bool = True,
+                                   save_dir: Optional[str] = None,
+                                   project_name: str = "yolo_training",
+                                   **augmentation_params) -> Optional[str]:
+        """Запускает обучение модели сегментации
+        
+        Args:
+            dataset_path: Путь к датасету
+            model_type: Тип модели (yolov8n-seg, yolov8s-seg, etc.)
+            epochs: Количество эпох
+            batch_size: Размер батча
+            image_size: Размер изображения
+            learning_rate: Скорость обучения
+            device: Устройство ('cpu' или '0' для GPU)
+            pretrained: Использовать предобученные веса
+            save_dir: Директория для сохранения
+            project_name: Имя проекта
+            **augmentation_params: Параметры аугментации
+        
+        Returns:
+            ID эксперимента или None при ошибке
+        """
+        try:
+            # Создаем ID эксперимента
+            experiment_id = str(uuid.uuid4())
             
-            # Логируем результаты валидации
-            if experiment_id and 'error' not in results:
-                # self.metrics_tracker.log_final_validation(
-                #     model_path, dataset_path, results.get('performance_metrics', {})
-                # )
-                pass
+            # Сохраняем конфигурацию
+            config = {
+                'task': 'segment',
+                'model_type': model_type,
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'image_size': image_size,
+                'learning_rate': learning_rate,
+                'device': device,
+                'pretrained': pretrained,
+                'augmentation': augmentation_params
+            }
             
+            # Добавляем в базу данных
+            self.database.add_experiment(
+                experiment_id=experiment_id,
+                name=project_name,
+                task='segment',
+                model_type=model_type,
+                config=config
+            )
+            
+            # Создаем трекер метрик
+            metrics_tracker = MetricsTracker(
+                experiment_id=experiment_id,
+                db_path=self.db_path,
+                log_dir=self.log_dir
+            )
+            
+            # Запускаем обучение в отдельном потоке
+            thread = threading.Thread(
+                target=self._run_segmentation_training,
+                args=(experiment_id, dataset_path, model_type, epochs, batch_size,
+                     image_size, learning_rate, device, pretrained, save_dir,
+                     project_name, metrics_tracker, augmentation_params),
+                daemon=True
+            )
+            
+            self.active_experiments[experiment_id] = {
+                'type': 'segmentation',
+                'status': 'running',
+                'config': config
+            }
+            self.experiment_threads[experiment_id] = thread
+            
+            thread.start()
+            
+            # Отправляем сигнал о начале обучения
+            self.training_started.emit(experiment_id)
+            self.status_message.emit(f"Запущено обучение сегментации: {project_name}")
+            
+            return experiment_id
+            
+        except Exception as e:
+            logger.error(f"Ошибка запуска обучения сегментации: {e}", exc_info=True)
+            return None
+    
+    def _run_segmentation_training(self, experiment_id: str, dataset_path: str,
+                                  model_type: str, epochs: int, batch_size: int,
+                                  image_size: int, learning_rate: float, device: str,
+                                  pretrained: bool, save_dir: Optional[str],
+                                  project_name: str, metrics_tracker: MetricsTracker,
+                                  augmentation_params: Dict):
+        """Запускает обучение сегментации в отдельном потоке"""
+        def log_callback(msg: str):
+            """Callback для логирования сообщений"""
+            self.status_message.emit(msg)
+            logger.info(f"[{experiment_id}] {msg}")
+        
+        def epoch_callback(epoch: int, metrics: Dict[str, float]):
+            """Callback для отслеживания прогресса эпох"""
+            try:
+                # Отправляем сигнал о прогрессе
+                self.training_progress.emit(epoch, metrics)
+                
+                # Сохраняем метрики в трекер
+                if metrics_tracker:
+                    metrics_tracker.log_metrics(epoch, 'validation', metrics)
+                
+                # Логируем информацию об эпохе
+                metrics_str = ", ".join([f"{k}={v:.4f}" for k, v in metrics.items()])
+                log_callback(f"Эпоха {epoch}/{epochs}: {metrics_str}")
+            except Exception as e:
+                logger.error(f"Ошибка в callback эпохи: {e}", exc_info=True)
+        
+        try:
+            # Создаем тренер
+            log_callback("Инициализация тренера...")
+            trainer = SegmentationTrainer(model_type=model_type, device=device)
+            log_callback(f"Загрузка модели {model_type}...")
+            trainer.load_model(pretrained=pretrained)
+            log_callback("Модель загружена успешно")
+            
+            # Запускаем обучение
+            result = trainer.train(
+                dataset_path=dataset_path,
+                epochs=epochs,
+                batch_size=batch_size,
+                image_size=image_size,
+                learning_rate=learning_rate,
+                save_dir=save_dir,
+                project_name=project_name,
+                callback=log_callback,
+                epoch_callback=epoch_callback,
+                **augmentation_params
+            )
+            
+            if result.get('success'):
+                # Обновляем статус
+                self.database.update_experiment_status(
+                    experiment_id=experiment_id,
+                    status='completed',
+                    completed_at=datetime.now().isoformat()
+                )
+                self.active_experiments[experiment_id]['status'] = 'completed'
+                
+                # Отправляем сигнал о завершении
+                self.training_completed.emit(
+                    experiment_id,
+                    True,
+                    f"Обучение завершено. Модель: {result.get('model_path', 'N/A')}"
+                )
+            else:
+                # Обновляем статус с ошибкой
+                error_msg = result.get('error', 'Неизвестная ошибка')
+                self.database.update_experiment_status(
+                    experiment_id=experiment_id,
+                    status='failed'
+                )
+                self.active_experiments[experiment_id]['status'] = 'failed'
+                
+                # Отправляем сигнал об ошибке
+                self.training_completed.emit(experiment_id, False, error_msg)
+                
+        except Exception as e:
+            logger.error(f"Ошибка в потоке обучения сегментации: {e}", exc_info=True)
+            self.database.update_experiment_status(
+                experiment_id=experiment_id,
+                status='failed'
+            )
+            self.active_experiments[experiment_id]['status'] = 'failed'
+            self.training_completed.emit(experiment_id, False, str(e))
+    
+    def validate_model(self, model_path: str, dataset_path: str, task: str = "detect",
+                      experiment_id: Optional[str] = None, comprehensive: bool = False,
+                      conf_threshold: float = 0.25, iou_threshold: float = 0.45) -> Dict[str, Any]:
+        """Валидирует модель
+        
+        Args:
+            model_path: Путь к модели
+            dataset_path: Путь к датасету
+            task: Тип задачи ('detect' или 'segment')
+            experiment_id: ID эксперимента (опционально)
+            comprehensive: Выполнить комплексную валидацию
+            conf_threshold: Порог уверенности
+            iou_threshold: Порог IoU
+        
+        Returns:
+            Результаты валидации
+        """
+        try:
+            validator = AdvancedValidator()
+            results = validator.validate(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                task=task,
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+                comprehensive=comprehensive
+            )
+            
+            # Отправляем сигнал о завершении валидации
             if experiment_id:
                 self.validation_completed.emit(experiment_id, results)
             
             return results
             
         except Exception as e:
-            error_result = {'error': f"Ошибка валидации: {e}"}
-            if experiment_id:
-                self.validation_completed.emit(experiment_id, error_result)
-            return error_result
+            logger.error(f"Ошибка валидации: {e}", exc_info=True)
+            return {'error': str(e)}
     
-    def compare_models(self,
-                      models: List[Dict],
-                      dataset_path: str,
-                      task: str = 'detect') -> Dict:
-        """
-        Сравнивает несколько моделей
+    def compare_models(self, models: List[Dict[str, str]], dataset_path: str,
+                      task: str = "detect") -> Dict[str, Any]:
+        """Сравнивает несколько моделей
         
-        :param models: Список моделей для сравнения
-        :param dataset_path: Путь к датасету
-        :param task: Тип задачи
-        :return: Результаты сравнения
+        Args:
+            models: Список моделей с ключами 'name' и 'path'
+            dataset_path: Путь к датасету
+            task: Тип задачи
+        
+        Returns:
+            Результаты сравнения
         """
         try:
-            return self.model_comparator.compare_models(
+            comparator = ModelComparator()
+            return comparator.compare(
                 models=models,
                 dataset_path=dataset_path,
                 task=task
             )
         except Exception as e:
-            return {'error': f"Ошибка сравнения моделей: {e}"}
+            logger.error(f"Ошибка сравнения моделей: {e}", exc_info=True)
+            return {'error': str(e)}
     
-    def analyze_dataset(self, dataset_path: str, task: str = 'detect') -> Dict:
-        """
-        Анализирует датасет
+    def analyze_dataset(self, dataset_path: str, task: str = "detect") -> Dict[str, Any]:
+        """Анализирует датасет
         
-        :param dataset_path: Путь к датасету
-        :param task: Тип задачи
-        :return: Результаты анализа
+        Args:
+            dataset_path: Путь к датасету
+            task: Тип задачи ('detect' или 'segment')
+        
+        Returns:
+            Результаты анализа
         """
         try:
-            if task == 'detect':
-                analyzer = DetectionDatasetAnalyzer(dataset_path)
+            if task == "segment":
+                analyzer = SegmentationDatasetAnalyzer()
             else:
-                analyzer = SegmentationDatasetAnalyzer(dataset_path)
+                analyzer = DetectionDatasetAnalyzer()
             
-            return analyzer.analyze_dataset()
+            return analyzer.analyze(dataset_path)
             
         except Exception as e:
-            return {'error': f"Ошибка анализа датасета: {e}"}
-    
-    def get_experiment_summary(self, experiment_id: str) -> Dict:
-        """Получает сводку по эксперименту"""
-        return self.metrics_tracker.get_experiment_summary(experiment_id)
-    
-    def get_all_experiments(self) -> List[Dict]:
-        """Получает список всех экспериментов"""
-        return self.metrics_tracker.get_all_experiments()
-    
-    def create_training_plots(self, experiment_id: str, output_dir: str) -> bool:
-        """Создает графики обучения"""
-        return self.visualizer.create_training_plots(experiment_id, output_dir)
-    
-    def export_experiment_data(self, experiment_id: str, output_path: str, format: str = 'json') -> bool:
-        """Экспортирует данные эксперимента"""
-        return self.metrics_tracker.export_metrics(experiment_id, output_path, format)
+            logger.error(f"Ошибка анализа датасета: {e}", exc_info=True)
+            return {'error': str(e)}
     
     def cancel_training(self, experiment_id: str) -> bool:
-        """Отменяет обучение"""
+        """Отменяет обучение
+        
+        Args:
+            experiment_id: ID эксперимента
+        
+        Returns:
+            True если отмена успешна
+        """
         try:
             if experiment_id in self.active_experiments:
-                experiment = self.active_experiments[experiment_id]
-                trainer = experiment['trainer']
-                trainer.cancel_training()
+                # Обновляем статус
+                self.database.update_experiment_status(
+                    experiment_id=experiment_id,
+                    status='cancelled'
+                )
+                self.active_experiments[experiment_id]['status'] = 'cancelled'
                 
-                # Обновляем статус эксперимента
-                self.metrics_tracker.database.update_experiment_status(experiment_id, 'cancelled')
-                
-                # Удаляем из активных
-                del self.active_experiments[experiment_id]
-                
+                # Примечание: ultralytics не поддерживает прямую отмену обучения
+                # Можно только отметить статус как отмененный
+                self.status_message.emit(f"Обучение {experiment_id} отмечено как отмененное")
                 return True
+            
             return False
+            
         except Exception as e:
             logger.error(f"Ошибка отмены обучения: {e}", exc_info=True)
             return False
     
-    def get_active_experiments(self) -> Dict:
-        """Получает список активных экспериментов"""
-        return self.active_experiments.copy()
-    
-    # Обработчики сигналов
-    def _on_progress_updated(self, progress: int):
-        """Обработчик обновления прогресса"""
-        # Находим соответствующий эксперимент
-        for exp_id, exp_info in self.active_experiments.items():
-            if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
-                # Можно добавить дополнительную логику
-                break
-    
-    def _on_epoch_updated(self, current_epoch: int, total_epochs: int):
-        """Обработчик обновления эпохи"""
-        # Находим соответствующий эксперимент
-        for exp_id, exp_info in self.active_experiments.items():
-            if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
-                # Можно добавить дополнительную логику
-                break
-    
-    def _on_metrics_updated(self, metrics: Dict):
-        """Обработчик обновления метрик (объединенные, для обратной совместимости)"""
-        # Находим соответствующий эксперимент
-        for exp_id, exp_info in self.active_experiments.items():
-            if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
-                # Отправляем сигнал (метрики уже логируются через отдельные обработчики)
-                current_epoch = exp_info['trainer'].progress.current_epoch
-                self.training_progress.emit(current_epoch, metrics)
-                break
-    
-    def _on_training_metrics_updated(self, epoch: int, metrics: Dict):
-        """Обработчик обновления метрик обучения"""
-        # Получаем experiment_id из sender (progress объекта)
-        sender = self.sender()
-        exp_id = None
+    def get_experiment_summary(self, experiment_id: str) -> Dict[str, Any]:
+        """Получает сводку по эксперименту
         
-        if sender and hasattr(sender, 'experiment_id'):
-            exp_id = sender.experiment_id
-        else:
-            # Fallback: находим соответствующий эксперимент по sender
-            for eid, exp_info in self.active_experiments.items():
-                if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == sender:
-                    exp_id = eid
-                    break
+        Args:
+            experiment_id: ID эксперимента
         
-        # Логируем метрики обучения в базу данных
-        if exp_id and metrics:
-            self.metrics_tracker.log_training_metrics(epoch, metrics, experiment_id=exp_id)
-    
-    def _on_validation_metrics_updated(self, epoch: int, metrics: Dict):
-        """Обработчик обновления метрик валидации"""
-        # Получаем experiment_id из sender (progress объекта)
-        sender = self.sender()
-        exp_id = None
-        
-        if sender and hasattr(sender, 'experiment_id'):
-            exp_id = sender.experiment_id
-        else:
-            # Fallback: находим соответствующий эксперимент по sender
-            for eid, exp_info in self.active_experiments.items():
-                if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == sender:
-                    exp_id = eid
-                    break
-        
-        # Логируем метрики валидации в базу данных
-        if exp_id and metrics:
-            self.metrics_tracker.log_validation_metrics(epoch, metrics, experiment_id=exp_id)
-    
-    def _on_training_finished(self, success: bool, message: str):
-        """Обработчик завершения обучения"""
-        # Находим соответствующий эксперимент
-        for exp_id, exp_info in self.active_experiments.items():
-            if hasattr(exp_info['trainer'], 'progress') and exp_info['trainer'].progress == self.sender():
-                # Обновляем статус эксперимента
-                status = 'completed' if success else 'failed'
-                self.metrics_tracker.database.update_experiment_status(exp_id, status)
-                
-                # Удаляем из активных
-                del self.active_experiments[exp_id]
-                
-                # Отправляем сигнал
-                self.training_completed.emit(exp_id, success, message)
-                break
-    
-    def _on_status_updated(self, text: str):
-        """Пробрасывает статусные сообщения в UI"""
+        Returns:
+            Сводка эксперимента
+        """
         try:
-            # Можно при желании префиксовать именем эксперимента/типа
-            self.status_message.emit(text)
-        except Exception:
-            pass
+            experiment = self.database.get_experiment(experiment_id)
+            if not experiment:
+                return {}
+            
+            # Получаем метрики
+            metrics = self.database.get_experiment_metrics(experiment_id)
+            
+            # Формируем сводку
+            summary = {
+                'id': experiment['id'],
+                'name': experiment['name'],
+                'task': experiment['task'],
+                'model_type': experiment['model_type'],
+                'status': experiment['status'],
+                'created_at': experiment['created_at'],
+                'completed_at': experiment.get('completed_at'),
+                'config': experiment.get('config', {})
+            }
+            
+            # Извлекаем финальные метрики
+            if metrics:
+                # Группируем по эпохам
+                epochs_metrics = {}
+                for metric in metrics:
+                    epoch = metric['epoch']
+                    if epoch not in epochs_metrics:
+                        epochs_metrics[epoch] = {}
+                    epochs_metrics[epoch][metric['metric_name']] = metric['metric_value']
+                
+                # Берем последнюю эпоху
+                if epochs_metrics:
+                    last_epoch = max(epochs_metrics.keys())
+                    summary['final_metrics'] = epochs_metrics[last_epoch]
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения сводки: {e}", exc_info=True)
+            return {}
     
-    def _on_metrics_tracked(self, metrics_data: Dict):
-        """Обработчик отслеживания метрик"""
-        # Можно добавить дополнительную логику обработки
-        pass
-    
-    def _on_experiment_completed(self, experiment_id: str, results: Dict):
-        """Обработчик завершения эксперимента"""
-        # Можно добавить дополнительную логику обработки
-        pass
+    def get_all_experiments(self) -> List[Dict[str, Any]]:
+        """Получает все эксперименты
+        
+        Returns:
+            Список экспериментов
+        """
+        try:
+            return self.database.get_all_experiments()
+        except Exception as e:
+            logger.error(f"Ошибка получения экспериментов: {e}", exc_info=True)
+            return []
 
 
 class TrainingConfigManager:
-    """Класс для управления конфигурациями обучения"""
+    """Менеджер конфигураций обучения"""
     
-    def __init__(self, config_dir: str = None):
-        self.config_dir = config_dir or 'training_configs'
-        os.makedirs(self.config_dir, exist_ok=True)
+    def __init__(self, config_dir: str = "training_configs"):
+        """Инициализация менеджера конфигураций
+        
+        Args:
+            config_dir: Директория для хранения конфигураций
+        """
+        self.config_dir = config_dir
+        os.makedirs(config_dir, exist_ok=True)
     
-    def save_config(self, config: Dict, name: str) -> bool:
-        """Сохраняет конфигурацию"""
+    def save_config(self, config: Dict[str, Any], name: str) -> bool:
+        """Сохраняет конфигурацию
+        
+        Args:
+            config: Словарь с конфигурацией
+            name: Имя конфигурации
+        
+        Returns:
+            True если сохранение успешно
+        """
         try:
             config_path = os.path.join(self.config_dir, f"{name}.json")
             with open(config_path, 'w', encoding='utf-8') as f:
@@ -494,30 +622,51 @@ class TrainingConfigManager:
             logger.error(f"Ошибка сохранения конфигурации: {e}", exc_info=True)
             return False
     
-    def load_config(self, name: str) -> Dict:
-        """Загружает конфигурацию"""
+    def load_config(self, name: str) -> Optional[Dict[str, Any]]:
+        """Загружает конфигурацию
+        
+        Args:
+            name: Имя конфигурации
+        
+        Returns:
+            Конфигурация или None
+        """
         try:
             config_path = os.path.join(self.config_dir, f"{name}.json")
+            if not os.path.exists(config_path):
+                return None
+            
             with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"Ошибка загрузки конфигурации: {e}", exc_info=True)
-            return {}
+            return None
     
     def list_configs(self) -> List[str]:
-        """Возвращает список доступных конфигураций"""
+        """Получает список доступных конфигураций
+        
+        Returns:
+            Список имен конфигураций
+        """
         try:
             configs = []
-            for file in os.listdir(self.config_dir):
-                if file.endswith('.json'):
-                    configs.append(file[:-5])  # Убираем .json
+            for filename in os.listdir(self.config_dir):
+                if filename.endswith('.json'):
+                    configs.append(filename[:-5])  # Убираем .json
             return sorted(configs)
         except Exception as e:
             logger.error(f"Ошибка получения списка конфигураций: {e}", exc_info=True)
             return []
     
     def delete_config(self, name: str) -> bool:
-        """Удаляет конфигурацию"""
+        """Удаляет конфигурацию
+        
+        Args:
+            name: Имя конфигурации
+        
+        Returns:
+            True если удаление успешно
+        """
         try:
             config_path = os.path.join(self.config_dir, f"{name}.json")
             if os.path.exists(config_path):
@@ -527,93 +676,4 @@ class TrainingConfigManager:
         except Exception as e:
             logger.error(f"Ошибка удаления конфигурации: {e}", exc_info=True)
             return False
-    
-    def get_default_configs(self) -> Dict:
-        """Возвращает конфигурации по умолчанию"""
-        return {
-            'detection_fast': {
-                'task': 'detect',
-                'model_type': 'yolov8n',
-                'epochs': 50,
-                'batch_size': 16,
-                'image_size': 640,
-                'learning_rate': 0.01,
-                'device': 'cpu',
-                'pretrained': True
-            },
-            'detection_accurate': {
-                'task': 'detect',
-                'model_type': 'yolov8l',
-                'epochs': 200,
-                'batch_size': 8,
-                'image_size': 640,
-                'learning_rate': 0.005,
-                'device': 'cpu',
-                'pretrained': True
-            },
-            'detection_fast_yolo11': {
-                'task': 'detect',
-                'model_type': 'yolov11n',
-                'epochs': 50,
-                'batch_size': 16,
-                'image_size': 640,
-                'learning_rate': 0.01,
-                'device': 'cpu',
-                'pretrained': True
-            },
-            'detection_accurate_yolo11': {
-                'task': 'detect',
-                'model_type': 'yolov11l',
-                'epochs': 200,
-                'batch_size': 8,
-                'image_size': 640,
-                'learning_rate': 0.005,
-                'device': 'cpu',
-                'pretrained': True
-            },
-            'segmentation_fast': {
-                'task': 'segment',
-                'model_type': 'yolov8n-seg',
-                'epochs': 50,
-                'batch_size': 16,
-                'image_size': 640,
-                'learning_rate': 0.01,
-                'device': 'cpu',
-                'pretrained': True,
-                'copy_paste': 0.3
-            },
-            'segmentation_accurate': {
-                'task': 'segment',
-                'model_type': 'yolov8l-seg',
-                'epochs': 200,
-                'batch_size': 8,
-                'image_size': 640,
-                'learning_rate': 0.005,
-                'device': 'cpu',
-                'pretrained': True,
-                'copy_paste': 0.3
-            },
-            'segmentation_fast_yolo11': {
-                'task': 'segment',
-                'model_type': 'yolov11n-seg',
-                'epochs': 50,
-                'batch_size': 16,
-                'image_size': 640,
-                'learning_rate': 0.01,
-                'device': 'cpu',
-                'pretrained': True,
-                'copy_paste': 0.3
-            },
-            'segmentation_accurate_yolo11': {
-                'task': 'segment',
-                'model_type': 'yolov11l-seg',
-                'epochs': 200,
-                'batch_size': 8,
-                'image_size': 640,
-                'learning_rate': 0.005,
-                'device': 'cpu',
-                'pretrained': True,
-                'copy_paste': 0.3
-            }
-        }
 
