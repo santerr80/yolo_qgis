@@ -216,6 +216,7 @@ class YOLOTrainingManager(QObject):
                 'save_dir': save_dir,
                 'project_name': project_name,
                 'status_callback': lambda msg: self.status_message.emit(msg),
+                'progress_callback': lambda epoch, metrics: self.training_progress.emit(epoch, metrics),
                 **augmentation_params
             }
             
@@ -311,6 +312,7 @@ class YOLOTrainingManager(QObject):
                 'save_dir': save_dir,
                 'project_name': project_name,
                 'status_callback': lambda msg: self.status_message.emit(msg),
+                'progress_callback': lambda epoch, metrics: self.training_progress.emit(epoch, metrics),
                 **augmentation_params
             }
             

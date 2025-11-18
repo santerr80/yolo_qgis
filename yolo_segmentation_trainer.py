@@ -334,6 +334,79 @@ class SegmentationTrainer:
             if status_callback:
                 status_callback("Начало обучения...")
             
+            # Создаем кастомный callback для обновления прогресса
+            if progress_callback:
+                def on_fit_epoch_end(trainer):
+                    """Callback вызывается в конце каждой эпохи"""
+                    try:
+                        epoch = trainer.epoch + 1  # Номер эпохи (начинается с 1)
+                        
+                        # Извлекаем метрики из trainer
+                        metrics = {}
+                        if hasattr(trainer, 'metrics') and trainer.metrics:
+                            metrics_dict = trainer.metrics
+                            # Проверяем, является ли это словарем или объектом
+                            if isinstance(metrics_dict, dict):
+                                # Если это словарь, извлекаем метрики напрямую
+                                for key, value in metrics_dict.items():
+                                    try:
+                                        if isinstance(value, (int, float)):
+                                            metrics[key] = float(value)
+                                        elif isinstance(value, (list, tuple)) and len(value) > 0:
+                                            metrics[key] = float(value[0])
+                                    except (ValueError, TypeError, IndexError):
+                                        pass
+                            else:
+                                # Если это объект, используем getattr для основных метрик
+                                for attr_name in ['loss', 'box_loss', 'cls_loss', 'dfl_loss']:
+                                    try:
+                                        if hasattr(metrics_dict, attr_name):
+                                            value = getattr(metrics_dict, attr_name)
+                                            if value is not None:
+                                                metrics[attr_name] = float(value)
+                                    except (ValueError, TypeError, AttributeError):
+                                        pass
+                        
+                        # Также пытаемся получить метрики из результатов валидации
+                        if hasattr(trainer, 'validator') and trainer.validator:
+                            if hasattr(trainer.validator, 'metrics'):
+                                val_metrics = trainer.validator.metrics
+                                if val_metrics:
+                                    # DetMetrics/SegMetrics - это объект, а не словарь, используем getattr
+                                    metric_names = {
+                                        'map50': 'mAP50',
+                                        'map': 'mAP50-95',
+                                        'precision': 'precision',
+                                        'recall': 'recall'
+                                    }
+                                    for attr_name, metric_key in metric_names.items():
+                                        try:
+                                            if hasattr(val_metrics, attr_name):
+                                                value = getattr(val_metrics, attr_name)
+                                                if value is not None:
+                                                    metrics[metric_key] = float(value)
+                                        except (ValueError, TypeError, AttributeError):
+                                            pass
+                        
+                        # Вызываем callback
+                        if progress_callback:
+                            progress_callback(epoch, metrics)
+                    except Exception as e:
+                        # Используем print вместо logger, чтобы избежать проблем с логированием
+                        try:
+                            logger.error(f"Ошибка в callback прогресса: {e}", exc_info=False)
+                        except:
+                            print(f"Ошибка в callback прогресса: {e}")
+                
+                # Добавляем callback к модели через add_callback
+                try:
+                    self.current_model.add_callback('on_fit_epoch_end', on_fit_epoch_end)
+                except AttributeError:
+                    # Если метод add_callback не существует, пробуем через параметр callbacks
+                    if 'callbacks' not in train_args:
+                        train_args['callbacks'] = {}
+                    train_args['callbacks']['on_fit_epoch_end'] = on_fit_epoch_end
+            
             # Запускаем обучение
             results = self.current_model.train(**train_args)
             
