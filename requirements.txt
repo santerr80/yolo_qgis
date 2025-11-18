@@ -41,6 +41,9 @@ PyYAML>=5.4.0
 json5>=0.9.0
 h5py>=3.1.0
 
+# Совместимость типов и расширения Python
+typing_extensions>=4.0.0  # Для совместимости с ultralytics и PyTorch
+
 # База данных
 #sqlite3  # Встроенная в Python
 
@@ -52,6 +55,7 @@ wandb>=0.12.0  # Опционально для Weights & Biases
 tqdm>=4.62.0
 psutil>=5.8.0
 GPUtil>=1.4.0  # Для мониторинга GPU
+pynvml>=11.0.0  # Для мониторинга NVIDIA GPU (опционально, но рекомендуется)
 
 # QGIS зависимости (уже установлены в QGIS)
 # qgis.PyQt - встроенные в QGIS
