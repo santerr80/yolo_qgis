@@ -28,7 +28,7 @@ import os.path
 
 # Fix for NumPy stderr issue in QGIS environment
 # This ensures sys.stderr is properly initialized before any NumPy operations
-from . import stderr_fix
+# Инициализация уже выполнена в __init__.py
 
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon

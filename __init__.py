@@ -25,7 +25,13 @@
 
 # Fix for NumPy stderr issue in QGIS environment
 # This ensures sys.stderr is properly initialized before any NumPy operations
-from . import stderr_fix
+import sys
+if not hasattr(sys, 'stderr') or sys.stderr is None:
+    try:
+        sys.stderr = sys.__stderr__
+    except AttributeError:
+        import io
+        sys.stderr = io.TextIOWrapper(io.BytesIO())
 
 
 # noinspection PyPep8Naming

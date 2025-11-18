@@ -36,6 +36,7 @@ from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
 from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetAnalyzer
 from .yolo_validation import AdvancedValidator, ModelComparator
 from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
+from .path_history_manager import PathHistoryManager
 
 
 
@@ -57,8 +58,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         self.current_experiment_id = None
         self.is_training = False
         
+        # Инициализация менеджера истории путей
+        self.path_history = PathHistoryManager()
+        
         self._setup_connections()
         self._initialize_training_components()
+        self._load_path_history()
 
     def _setup_connections(self):
         """Настройка всех сигналов и слотов."""
@@ -88,6 +93,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.mQgsFileWidget.setToolTip("Dataset directory for new dataset")
         except Exception as e:
             logger.warning(f"Не удалось инициализировать QgsFileWidget: {e}")
+        
+        # Подключение сигналов для сохранения истории путей
+        self._setup_path_history_connections()
         
         # Подключение кнопок управления датасетами
         self.manageDatasetsButton.clicked.connect(self.open_dataset_manager_dialog)
@@ -178,6 +186,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Безопасное получение пути из QgsFileWidget
             try:
                 output_dir = self.mQgsFileWidget.filePath()
+                # Сохраняем путь в историю
+                if output_dir:
+                    self.path_history.add_dataset_creation_path(output_dir)
             except Exception as e:
                 logger.error(f"Ошибка получения пути из QgsFileWidget: {e}", exc_info=True)
                 output_dir = ""
@@ -402,6 +413,100 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Ошибка", f"Ошибка открытия диалога управления: {e}")
     
+    def _setup_path_history_connections(self):
+        """Настраивает соединения для сохранения истории путей"""
+        try:
+            # Подключаем сигналы fileChanged для автоматического сохранения
+            if hasattr(self, 'mQgsFileWidget'):
+                self.mQgsFileWidget.fileChanged.connect(
+                    lambda: self._save_path_to_history('dataset_creation', self.mQgsFileWidget.filePath())
+                )
+            if hasattr(self, 'fileWidgetDataset'):
+                self.fileWidgetDataset.fileChanged.connect(
+                    lambda: self._save_path_to_history('dataset', self.fileWidgetDataset.filePath())
+                )
+            if hasattr(self, 'fileWidgetSaveDir'):
+                self.fileWidgetSaveDir.fileChanged.connect(
+                    lambda: self._save_path_to_history('save_dir', self.fileWidgetSaveDir.filePath())
+                )
+            if hasattr(self, 'fileWidgetValidationModel'):
+                self.fileWidgetValidationModel.fileChanged.connect(
+                    lambda: self._save_path_to_history('model', self.fileWidgetValidationModel.filePath())
+                )
+            if hasattr(self, 'fileWidgetValidationDataset'):
+                self.fileWidgetValidationDataset.fileChanged.connect(
+                    lambda: self._save_path_to_history('dataset', self.fileWidgetValidationDataset.filePath())
+                )
+        except Exception as e:
+            logger.error(f"Ошибка настройки соединений истории путей: {e}", exc_info=True)
+    
+    def _load_path_history(self):
+        """Загружает последние использованные пути"""
+        try:
+            # Загружаем последний путь для создания датасета
+            last_path = self.path_history.get_last_dataset_creation_path()
+            if last_path and hasattr(self, 'mQgsFileWidget'):
+                try:
+                    self.mQgsFileWidget.setFilePath(last_path)
+                except Exception:
+                    pass
+            
+            # Загружаем последний путь к датасету для обучения
+            last_dataset = self.path_history.get_last_dataset_path()
+            if last_dataset and hasattr(self, 'fileWidgetDataset'):
+                try:
+                    self.fileWidgetDataset.setFilePath(last_dataset)
+                except Exception:
+                    pass
+            
+            # Загружаем последний путь к директории сохранения
+            last_save_dir = self.path_history.get_last_save_dir_path()
+            if last_save_dir and hasattr(self, 'fileWidgetSaveDir'):
+                try:
+                    self.fileWidgetSaveDir.setFilePath(last_save_dir)
+                except Exception:
+                    pass
+            
+            # Загружаем последний путь к модели
+            last_model = self.path_history.get_last_model_path()
+            if last_model and hasattr(self, 'fileWidgetValidationModel'):
+                try:
+                    self.fileWidgetValidationModel.setFilePath(last_model)
+                except Exception:
+                    pass
+            
+            # Загружаем последний путь к датасету для валидации
+            if last_dataset and hasattr(self, 'fileWidgetValidationDataset'):
+                try:
+                    self.fileWidgetValidationDataset.setFilePath(last_dataset)
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Ошибка загрузки истории путей: {e}", exc_info=True)
+    
+    def _save_path_to_history(self, path_type: str, path: str):
+        """
+        Сохраняет путь в историю
+        
+        :param path_type: Тип пути ('dataset', 'model', 'save_dir', 'dataset_creation')
+        :param path: Путь для сохранения
+        """
+        try:
+            if not path:
+                return
+            
+            if path_type == 'dataset':
+                self.path_history.add_dataset_path(path)
+            elif path_type == 'model':
+                self.path_history.add_model_path(path)
+            elif path_type == 'save_dir':
+                self.path_history.add_save_dir_path(path)
+            elif path_type == 'dataset_creation':
+                self.path_history.add_dataset_creation_path(path)
+        except Exception as e:
+            logger.error(f"Ошибка сохранения пути в историю: {e}", exc_info=True)
+    
     def _initialize_training_components(self):
         """Инициализирует компоненты системы тренировки"""
         try:
@@ -532,6 +637,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 QtWidgets.QMessageBox.warning(self, "Ошибка", "Выберите путь к датасету!")
                 return
             
+            # Сохраняем путь в историю
+            self.path_history.add_dataset_path(dataset_path)
+            
             # Определяем тип задачи
             task_type = self.comboBoxTaskType.currentText()
             task = "detect" if "Детекция" in task_type else "segment"
@@ -561,6 +669,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Выходные параметры
             project_name = self.lineEditProjectName.text() or "yolo_training"
             save_dir = self.fileWidgetSaveDir.filePath()
+            
+            # Сохраняем путь к директории сохранения в историю
+            if save_dir:
+                self.path_history.add_save_dir_path(save_dir)
             
             # Запускаем тренировку
             if task == "detect":
@@ -1144,8 +1256,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             try:
                 if hasattr(self, 'fileWidgetValidationModel'):
                     model_path = self.fileWidgetValidationModel.filePath()
+                    if model_path:
+                        self.path_history.add_model_path(model_path)
                 if hasattr(self, 'fileWidgetValidationDataset'):
                     dataset_path = self.fileWidgetValidationDataset.filePath()
+                    if dataset_path:
+                        self.path_history.add_dataset_path(dataset_path)
             except Exception:
                 pass
             
