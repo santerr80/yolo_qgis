@@ -7,7 +7,7 @@
 import os
 import logging
 import uuid
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Tuple
 from datetime import datetime
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal
@@ -16,6 +16,7 @@ from .yolo_metrics_tracker import MetricsTracker
 from .yolo_detection_trainer import DetectionTrainer, DetectionDatasetAnalyzer
 from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetAnalyzer
 from .yolo_validation import AdvancedValidator, ModelComparator
+from .device_utils import test_cuda_devices, get_recommended_device, check_device_availability
 
 logger = logging.getLogger(__name__)
 
@@ -465,4 +466,29 @@ class YOLOTrainingManager(QObject):
         except Exception as e:
             logger.error(f"Ошибка получения сводки эксперимента: {e}", exc_info=True)
             return {}
+    
+    def test_cuda_devices(self) -> Dict[str, Any]:
+        """
+        Запускает независимый тест CUDA устройств с выводом информации в лог
+        
+        :return: Словарь с результатами теста
+        """
+        return test_cuda_devices()
+    
+    def get_recommended_device(self) -> str:
+        """
+        Получает рекомендуемое устройство для обучения
+        
+        :return: Рекомендуемое устройство ('cpu' или номер GPU)
+        """
+        return get_recommended_device()
+    
+    def check_device_availability(self, device: str) -> Tuple[bool, Optional[str]]:
+        """
+        Проверяет доступность указанного устройства
+        
+        :param device: Устройство для проверки ('cpu', '0', '1', и т.д.)
+        :return: (доступно_ли, сообщение_об_ошибке)
+        """
+        return check_device_availability(device)
 

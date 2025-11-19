@@ -9,6 +9,8 @@ import logging
 import uuid
 from typing import Dict, Optional, Any
 
+from .device_utils import test_cuda_devices, check_device_availability
+
 logger = logging.getLogger(__name__)
 
 
@@ -251,6 +253,21 @@ class DetectionTrainer:
             except ImportError:
                 return {'error': 'Библиотека ultralytics не установлена. Установите: pip install ultralytics'}
             
+            # Запускаем тест CUDA устройств перед началом обучения
+            if status_callback:
+                status_callback("Проверка CUDA устройств...")
+            logger.info("Запуск теста CUDA устройств перед началом обучения")
+            cuda_test_result = test_cuda_devices()
+            
+            # Проверяем доступность указанного устройства
+            if device and device != 'cpu':
+                is_available, error_msg = check_device_availability(device)
+                if not is_available:
+                    logger.warning(f"Указанное устройство {device} недоступно: {error_msg}")
+                    if status_callback:
+                        status_callback(f"Устройство {device} недоступно, переключение на CPU...")
+                    device = 'cpu'
+            
             # Определяем путь к dataset.yaml
             yaml_path = os.path.join(dataset_path, 'dataset.yaml')
             if not os.path.exists(yaml_path):
@@ -258,6 +275,22 @@ class DetectionTrainer:
                 yaml_path = self._create_yaml_from_ndjson(dataset_path)
                 if not yaml_path:
                     return {'error': 'Не найден dataset.yaml и не удалось создать из NDJSON'}
+            
+            # Дополнительная проверка и автоматическое переключение на CPU при необходимости
+            # (основная проверка уже выполнена выше через check_device_availability)
+            if device and device != 'cpu':
+                try:
+                    import torch
+                    if not torch.cuda.is_available():
+                        logger.warning("CUDA недоступна, автоматическое переключение на CPU")
+                        if status_callback:
+                            status_callback("CUDA недоступна, переключение на CPU...")
+                        device = 'cpu'
+                except ImportError:
+                    logger.warning("PyTorch не найден, автоматическое переключение на CPU")
+                    if status_callback:
+                        status_callback("PyTorch не найден, переключение на CPU...")
+                    device = 'cpu'
             
             # Создаем модель
             if status_callback:
@@ -423,7 +456,11 @@ class DetectionTrainer:
             }
             
         except Exception as e:
-            logger.error(f"Ошибка обучения: {e}", exc_info=True)
+            # Безопасная обработка ошибок логирования
+            try:
+                logger.error(f"Ошибка обучения: {e}", exc_info=False)
+            except:
+                print(f"Ошибка обучения: {e}")
             self.is_training = False
             
             if self.metrics_tracker:
