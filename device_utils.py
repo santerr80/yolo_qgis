@@ -5,9 +5,49 @@
 """
 
 import logging
+import sys
 from typing import Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_logger_handler():
+    """
+    Убеждается, что у логгера есть валидный обработчик.
+    Исправляет проблему с None stream в QGIS окружении.
+    """
+    # Проверяем существующие обработчики
+    has_valid_handler = False
+    handlers_to_remove = []
+    
+    for handler in logger.handlers:
+        if hasattr(handler, 'stream'):
+            if handler.stream is None:
+                # Помечаем для удаления обработчики с None stream
+                handlers_to_remove.append(handler)
+            else:
+                has_valid_handler = True
+    
+    # Удаляем невалидные обработчики
+    for handler in handlers_to_remove:
+        logger.removeHandler(handler)
+    
+    # Если нет валидного обработчика, добавляем новый
+    if not has_valid_handler:
+        try:
+            # Пытаемся использовать sys.stdout, если доступен
+            if sys.stdout and not sys.stdout.closed:
+                handler = logging.StreamHandler(sys.stdout)
+                handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+                logger.addHandler(handler)
+                logger.setLevel(logging.INFO)
+        except (AttributeError, OSError):
+            # Если sys.stdout недоступен, используем NullHandler
+            logger.addHandler(logging.NullHandler())
+
+
+# Инициализируем обработчик при импорте модуля
+_ensure_logger_handler()
 
 
 def test_cuda_devices() -> Dict[str, Any]:
@@ -118,7 +158,10 @@ def test_cuda_devices() -> Dict[str, Any]:
                         props = torch.cuda.get_device_properties(i)
                         logger.info(f"    Дополнительная информация:")
                         logger.info(f"      Мультипроцессоры: {props.multi_processor_count}")
-                        logger.info(f"      Максимальные потоки на блок: {props.max_threads_per_block}")
+                        # max_threads_per_block не является атрибутом torch._C._CudaDeviceProperties
+                        # Используем альтернативные доступные свойства
+                        if hasattr(props, 'major') and hasattr(props, 'minor'):
+                            logger.info(f"      Compute Capability: {props.major}.{props.minor}")
                     except Exception as e:
                         logger.warning(f"    Не удалось получить дополнительную информацию: {e}")
                     
