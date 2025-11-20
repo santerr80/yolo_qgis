@@ -255,6 +255,13 @@ class SegmentationTrainer:
             
             self.is_training = True
             
+            # Устанавливаем переменные окружения для предотвращения создания новых процессов
+            # Это критично для работы с GPU в QGIS
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+            # Отключаем multiprocessing spawn для предотвращения создания новых процессов
+            if device != 'cpu':
+                os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+            
             # Проверяем наличие ultralytics
             try:
                 from ultralytics import YOLO
@@ -282,6 +289,8 @@ class SegmentationTrainer:
                 self.current_model = YOLO(f"{model_name}.yaml")
             
             # Настраиваем параметры обучения
+            # Важно: workers=0 отключает multiprocessing, что предотвращает
+            # запуск новых процессов QGIS при использовании GPU
             train_args = {
                 'data': yaml_path,
                 'epochs': epochs,
@@ -300,6 +309,7 @@ class SegmentationTrainer:
                 'copy_paste': copy_paste,
                 'flipud': 0.0,  # Вертикальное отражение отключено по умолчанию
                 'fliplr': fliplr,
+                'workers': 0,  # Отключаем multiprocessing для совместимости с QGIS
             }
             
             # Создаем experiment_id для трекинга
