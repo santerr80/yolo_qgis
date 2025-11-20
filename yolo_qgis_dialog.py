@@ -1062,6 +1062,29 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             import traceback
             traceback.print_exc()
     
+    def _normalize_metric_name(self, metric_name):
+        """Нормализует имя метрики, удаляя префиксы и суффиксы"""
+        if not metric_name:
+            return metric_name
+        
+        # Удаляем префиксы metrics/ и val/
+        normalized = metric_name
+        if normalized.startswith('metrics/'):
+            normalized = normalized[8:]  # Удаляем 'metrics/'
+        elif normalized.startswith('val/'):
+            normalized = normalized[4:]   # Удаляем 'val/'
+        
+        # Удаляем суффикс (B) или (B-1) и т.д.
+        if normalized.endswith('(B)'):
+            normalized = normalized[:-3]
+        elif '(' in normalized:
+            # Удаляем скобки с содержимым в конце
+            idx = normalized.rfind('(')
+            if idx > 0:
+                normalized = normalized[:idx]
+        
+        return normalized.strip()
+    
     def _load_metrics_from_database(self, experiment_id):
         """Загружает метрики из базы данных и заполняет таблицу"""
         try:
@@ -1078,7 +1101,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 logger.warning(f"Метрики для эксперимента {experiment_id} не найдены в базе данных")
                 return
             
-            # Группируем метрики по эпохам
+            # Группируем метрики по эпохам с нормализацией имен
             epochs_data = {}
             for metric in metrics_data:
                 epoch = metric['epoch']
@@ -1086,9 +1109,20 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 metric_name = metric['metric_name']
                 metric_value = metric['metric_value']
                 
+                # Нормализуем имя метрики
+                normalized_name = self._normalize_metric_name(metric_name)
+                
+                # Определяем правильную фазу для loss метрик с префиксом val/
+                if metric_name.startswith('val/'):
+                    phase = 'validation'
+                elif metric_name.startswith('metrics/'):
+                    phase = 'validation'
+                
                 if epoch not in epochs_data:
                     epochs_data[epoch] = {'training': {}, 'validation': {}}
                 
+                epochs_data[epoch][phase][normalized_name] = metric_value
+                # Также сохраняем оригинальное имя для обратной совместимости
                 epochs_data[epoch][phase][metric_name] = metric_value
             
             # Заполняем таблицу метриками по эпохам
@@ -1098,29 +1132,47 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 training_metrics = epoch_data.get('training', {})
                 
                 # Формируем строку метрик для таблицы
-                # Извлекаем loss из training метрик (может быть под разными именами)
-                loss_value = 0.0
-                for loss_key in ['loss', 'train_loss', 'box_loss', 'cls_loss', 'dfl_loss']:
-                    if loss_key in training_metrics:
-                        # Если есть общий loss, используем его, иначе суммируем компоненты
-                        if loss_key == 'loss':
-                            loss_value = training_metrics[loss_key]
-                            break
-                        else:
-                            loss_value += training_metrics.get(loss_key, 0.0)
+                # Извлекаем метрики валидации (с нормализованными именами)
+                map50 = validation_metrics.get('mAP50', validation_metrics.get('map50', 0.0))
+                map50_95 = validation_metrics.get('mAP50-95', validation_metrics.get('mAP50_95', 
+                                    validation_metrics.get('map', validation_metrics.get('map50-95', 0.0))))
+                precision = validation_metrics.get('precision', 0.0)
+                recall = validation_metrics.get('recall', 0.0)
                 
-                # Если не нашли loss, пробуем найти любую метрику с loss в названии
+                # Извлекаем loss из validation метрик (val/box_loss, val/cls_loss, val/dfl_loss)
+                loss_value = 0.0
+                loss_keys = ['box_loss', 'cls_loss', 'dfl_loss']
+                for loss_key in loss_keys:
+                    if loss_key in validation_metrics:
+                        loss_value += validation_metrics.get(loss_key, 0.0)
+                
+                # Если не нашли в validation, пробуем training метрики
                 if loss_value == 0.0:
-                    for key, value in training_metrics.items():
+                    for loss_key in ['loss', 'train_loss', 'box_loss', 'cls_loss', 'dfl_loss']:
+                        if loss_key in training_metrics:
+                            if loss_key == 'loss':
+                                loss_value = training_metrics[loss_key]
+                                break
+                            else:
+                                loss_value += training_metrics.get(loss_key, 0.0)
+                
+                # Если все еще не нашли loss, пробуем найти любую метрику с loss в названии
+                if loss_value == 0.0:
+                    for key, value in validation_metrics.items():
                         if 'loss' in key.lower():
                             loss_value = value
                             break
+                    if loss_value == 0.0:
+                        for key, value in training_metrics.items():
+                            if 'loss' in key.lower():
+                                loss_value = value
+                                break
                 
                 row_metrics = {
-                    'mAP50': validation_metrics.get('mAP50', 0.0),
-                    'mAP50-95': validation_metrics.get('mAP50-95', validation_metrics.get('mAP50_95', validation_metrics.get('map', 0.0))),
-                    'precision': validation_metrics.get('precision', 0.0),
-                    'recall': validation_metrics.get('recall', 0.0),
+                    'mAP50': map50,
+                    'mAP50-95': map50_95,
+                    'precision': precision,
+                    'recall': recall,
                     'loss': loss_value
                 }
                 
