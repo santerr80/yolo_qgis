@@ -36,6 +36,7 @@ from qgis.PyQt.QtWidgets import QAction
 
 # Initialize Qt resources from file resources.py
 from .resources import *  # noqa: F401, F403
+
 # Import the code for the dialog
 from .yolo_qgis_dialog import YoloQgisDialog
 
@@ -58,14 +59,12 @@ class YoloQgis:
         self.iface = iface
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
-        
-        
+
         # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        locale = QSettings().value("locale/userLocale")[0:2]
         locale_path = os.path.join(
-            self.plugin_dir,
-            'i18n',
-            'YoloQgis_{}.qm'.format(locale))
+            self.plugin_dir, "i18n", "YoloQgis_{}.qm".format(locale)
+        )
 
         if os.path.exists(locale_path):
             self.translator = QTranslator()
@@ -74,7 +73,7 @@ class YoloQgis:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&Yolo Qgis')
+        self.menu = self.tr("&Yolo Qgis")
         self.dlg = None  # Initialize dialog reference
 
         # Check if plugin was started the first time in current QGIS session
@@ -94,8 +93,7 @@ class YoloQgis:
         :rtype: QString
         """
         # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
-        return QCoreApplication.translate('YoloQgis', message)
-
+        return QCoreApplication.translate("YoloQgis", message)
 
     def add_action(
         self,
@@ -107,7 +105,8 @@ class YoloQgis:
         add_to_toolbar=True,
         status_tip=None,
         whats_this=None,
-        parent=None):
+        parent=None,
+    ):
         """Add a toolbar icon to the toolbar.
 
         :param icon_path: Path to the icon for this action. Can be a resource
@@ -163,9 +162,7 @@ class YoloQgis:
             self.iface.addToolBarIcon(action)
 
         if add_to_menu:
-            self.iface.addPluginToMenu(
-                self.menu,
-                action)
+            self.iface.addPluginToMenu(self.menu, action)
 
         self.actions.append(action)
 
@@ -173,25 +170,22 @@ class YoloQgis:
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
-        icon_path = ':/plugins/yolo_qgis/icon.png'
+        icon_path = ":/plugins/yolo_qgis/icon.png"
         self.add_action(
             icon_path,
-            text=self.tr(u'Yolo Qgis'),
+            text=self.tr("Yolo Qgis"),
             callback=self.run,
-            parent=self.iface.mainWindow())
+            parent=self.iface.mainWindow(),
+        )
 
         # will be set False in run()
         self.first_start = True
 
-
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
-            self.iface.removePluginMenu(
-                self.tr(u'&Yolo Qgis'),
-                action)
+            self.iface.removePluginMenu(self.tr("&Yolo Qgis"), action)
             self.iface.removeToolBarIcon(action)
-
 
     def run(self):
         """Run method that performs all the real work"""
@@ -201,7 +195,7 @@ class YoloQgis:
             if self.first_start:
                 self.first_start = False
                 self.dlg = YoloQgisDialog()
-            elif not hasattr(self, 'dlg') or self.dlg is None:
+            elif not hasattr(self, "dlg") or self.dlg is None:
                 # Recreate dialog if it doesn't exist (e.g., after plugin reload)
                 self.dlg = YoloQgisDialog()
 
@@ -214,10 +208,11 @@ class YoloQgis:
                 # Do something useful here - delete the line containing pass and
                 # substitute with your code.
                 pass
-                
+
         except Exception as e:
             # Handle any errors that might occur during dialog creation or execution
             from qgis.PyQt.QtWidgets import QMessageBox
+
             error_msg = f"Произошла ошибка при запуске плагина:\n{str(e)}"
             QMessageBox.critical(None, "Ошибка плагина YOLO QGIS", error_msg)
             logger.error(f"Ошибка в плагине YOLO QGIS: {e}", exc_info=True)

@@ -26,11 +26,13 @@
 # Fix for NumPy stderr issue in QGIS environment
 # This ensures sys.stderr is properly initialized before any NumPy operations
 import sys
-if not hasattr(sys, 'stderr') or sys.stderr is None:
+
+if not hasattr(sys, "stderr") or sys.stderr is None:
     try:
         sys.stderr = sys.__stderr__
     except AttributeError:
         import io
+
         sys.stderr = io.TextIOWrapper(io.BytesIO())
 
 
@@ -43,4 +45,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     """
     #
     from .yolo_qgis import YoloQgis
+
     return YoloQgis(iface)

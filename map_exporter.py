@@ -6,10 +6,11 @@ from qgis.core import (
     QgsMapSettings,
     QgsMapRendererParallelJob,
     QgsVectorLayer,
-    QgsRectangle
+    QgsRectangle,
 )
 from qgis.PyQt.QtCore import QSize
 from qgis.PyQt.QtGui import QColor
+
 
 def create_world_file(map_settings, image_file_path):
     """
@@ -18,14 +19,14 @@ def create_world_file(map_settings, image_file_path):
     file_name, _ = os.path.splitext(image_file_path)
     # Определяем расширение в зависимости от формата изображения
     image_ext = os.path.splitext(image_file_path)[1].lower()
-    if image_ext == '.png':
-        world_ext = '.pgw'
-    elif image_ext in ['.jpg', '.jpeg']:
-        world_ext = '.jgw'
-    elif image_ext == '.tif':
-        world_ext = '.tfw'
-    else: # По умолчанию
-        world_ext = '.wld'
+    if image_ext == ".png":
+        world_ext = ".pgw"
+    elif image_ext in [".jpg", ".jpeg"]:
+        world_ext = ".jgw"
+    elif image_ext == ".tif":
+        world_ext = ".tfw"
+    else:  # По умолчанию
+        world_ext = ".wld"
 
     world_file_path = file_name + world_ext
     extent = map_settings.extent()
@@ -33,7 +34,10 @@ def create_world_file(map_settings, image_file_path):
     img_height = map_settings.outputSize().height()
 
     if img_width == 0 or img_height == 0:
-        return False, f"Неверный размер изображения (ширина или высота равна 0) для файла {image_file_path}"
+        return (
+            False,
+            f"Неверный размер изображения (ширина или высота равна 0) для файла {image_file_path}",
+        )
 
     x_res = extent.width() / img_width
     y_res = -extent.height() / img_height
@@ -41,21 +45,25 @@ def create_world_file(map_settings, image_file_path):
     y_coord_up_left = extent.yMaximum() + (y_res / 2)
 
     try:
-        with open(world_file_path, 'w') as f:
-            f.write(f"{x_res}\n{0.0}\n{0.0}\n{y_res}\n{x_coord_up_left}\n{y_coord_up_left}\n")
+        with open(world_file_path, "w") as f:
+            f.write(
+                f"{x_res}\n{0.0}\n{0.0}\n{y_res}\n{x_coord_up_left}\n{y_coord_up_left}\n"
+            )
         print(f"Файл привязки сохранен: {world_file_path}")
         return True, None
     except Exception as e:
         return False, f"Ошибка при создании файла привязки {world_file_path}: {e}"
 
 
-def export_views(grid_layer: QgsVectorLayer,
-                 output_dir: str,
-                 image_format: str,
-                 width_px: int,
-                 height_px: int,
-                 dpi: int,
-                 progress_reporter=None):
+def export_views(
+    grid_layer: QgsVectorLayer,
+    output_dir: str,
+    image_format: str,
+    width_px: int,
+    height_px: int,
+    dpi: int,
+    progress_reporter=None,
+):
     """
     Экспортирует вид карты для каждого полигона в слое сетки.
 
@@ -71,11 +79,15 @@ def export_views(grid_layer: QgsVectorLayer,
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Создана выходная директория: {output_dir}")
-        
+
     project = QgsProject.instance()
     root = project.layerTreeRoot()
-    
-    visible_layers = [layer for layer in project.mapLayers().values() if root.findLayer(layer.id()).isVisible()]
+
+    visible_layers = [
+        layer
+        for layer in project.mapLayers().values()
+        if root.findLayer(layer.id()).isVisible()
+    ]
     if not visible_layers:
         return False, "В проекте нет видимых слоев для экспорта."
 
@@ -86,7 +98,7 @@ def export_views(grid_layer: QgsVectorLayer,
     for i, feature in enumerate(grid_layer.getFeatures()):
         if progress_reporter and progress_reporter.is_canceled():
             return False, "Операция отменена пользователем."
-        
+
         if progress_reporter:
             progress_reporter.set_progress(i + 1, total_features)
 
@@ -113,8 +125,11 @@ def export_views(grid_layer: QgsVectorLayer,
         if errors:
             # Объединяем все сообщения об ошибках в одну строку
             error_string = ", ".join(errors)
-            return False, f"Ошибка рендеринга для объекта {feature.id()}: {error_string}"
-        
+            return (
+                False,
+                f"Ошибка рендеринга для объекта {feature.id()}: {error_string}",
+            )
+
         try:
             img = job.renderedImage()
             img.save(file_path, image_format.lower())

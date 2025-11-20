@@ -3,7 +3,14 @@
 import processing
 from qgis.core import QgsVectorLayer, QgsWkbTypes
 
-def create_grid_layer(source_layer: QgsVectorLayer, h_spacing: float, v_spacing: float, h_overlay: float, v_overlay: float):
+
+def create_grid_layer(
+    source_layer: QgsVectorLayer,
+    h_spacing: float,
+    v_spacing: float,
+    h_overlay: float,
+    v_overlay: float,
+):
     """
     Создает и возвращает временный полигональный слой сетки на основе экстента исходного слоя.
 
@@ -21,34 +28,40 @@ def create_grid_layer(source_layer: QgsVectorLayer, h_spacing: float, v_spacing:
     try:
         extent = source_layer.extent()
         crs = source_layer.crs()
-        
+
         # Проверка, что экстент корректен
         if extent.isEmpty():
-            return None, f"Экстент слоя '{source_layer.name()}' пуст. Невозможно создать сетку."
+            return (
+                None,
+                f"Экстент слоя '{source_layer.name()}' пуст. Невозможно создать сетку.",
+            )
 
-        extent_str = f'{extent.xMinimum()},{extent.xMaximum()},{extent.yMinimum()},{extent.yMaximum()}'
+        extent_str = f"{extent.xMinimum()},{extent.xMaximum()},{extent.yMinimum()},{extent.yMaximum()}"
 
         parameters = {
-            'TYPE': 2,  # Тип сетки: Полигоны (Rectangles)
-            'EXTENT': extent_str,
-            'HSPACING': h_spacing,
-            'VSPACING': v_spacing,
-            'HOVERLAY': h_overlay,
-            'VOVERLAY': v_overlay,
-            'CRS': crs,
-            'OUTPUT': 'memory:'  # Создаем временный слой в памяти
+            "TYPE": 2,  # Тип сетки: Полигоны (Rectangles)
+            "EXTENT": extent_str,
+            "HSPACING": h_spacing,
+            "VSPACING": v_spacing,
+            "HOVERLAY": h_overlay,
+            "VOVERLAY": v_overlay,
+            "CRS": crs,
+            "OUTPUT": "memory:",  # Создаем временный слой в памяти
         }
 
         # Запуск алгоритма QGIS
         result = processing.run("qgis:creategrid", parameters)
-        grid_layer = result.get('OUTPUT')
+        grid_layer = result.get("OUTPUT")
 
         if not grid_layer or not isinstance(grid_layer, QgsVectorLayer):
             return None, "Алгоритм 'creategrid' не вернул корректный векторный слой."
-        
+
         # Проверка, что слой не пустой
         if grid_layer.featureCount() == 0:
-             return None, "Созданная сетка не содержит ни одного объекта. Проверьте параметры (экстент, шаг)."
+            return (
+                None,
+                "Созданная сетка не содержит ни одного объекта. Проверьте параметры (экстент, шаг).",
+            )
 
         return grid_layer, None  # Успешное выполнение
 

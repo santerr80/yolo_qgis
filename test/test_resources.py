@@ -8,14 +8,13 @@
 
 """
 
-__author__ = 'santerr80@gmail.com'
-__date__ = '2025-10-08'
-__copyright__ = 'Copyright 2025, santerr80'
+__author__ = "santerr80@gmail.com"
+__date__ = "2025-10-08"
+__copyright__ = "Copyright 2025, santerr80"
 
 import unittest
 
 from qgis.PyQt.QtGui import QIcon
-
 
 
 class YoloQgisDialogTest(unittest.TestCase):
@@ -31,14 +30,12 @@ class YoloQgisDialogTest(unittest.TestCase):
 
     def test_icon_png(self):
         """Test we can click OK."""
-        path = ':/plugins/YoloQgis/icon.png'
+        path = ":/plugins/YoloQgis/icon.png"
         icon = QIcon(path)
         self.assertFalse(icon.isNull())
+
 
 if __name__ == "__main__":
     suite = unittest.makeSuite(YoloQgisResourcesTest)
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)
-
-
-
