@@ -351,8 +351,8 @@ class SegmentationTrainer:
                     try:
                         epoch = trainer.epoch + 1  # Номер эпохи (начинается с 1)
                         
-                        # Извлекаем метрики из trainer
-                        metrics = {}
+                        # Извлекаем метрики обучения из trainer
+                        training_metrics = {}
                         if hasattr(trainer, 'metrics') and trainer.metrics:
                             metrics_dict = trainer.metrics
                             # Проверяем, является ли это словарем или объектом
@@ -361,9 +361,9 @@ class SegmentationTrainer:
                                 for key, value in metrics_dict.items():
                                     try:
                                         if isinstance(value, (int, float)):
-                                            metrics[key] = float(value)
+                                            training_metrics[key] = float(value)
                                         elif isinstance(value, (list, tuple)) and len(value) > 0:
-                                            metrics[key] = float(value[0])
+                                            training_metrics[key] = float(value[0])
                                     except (ValueError, TypeError, IndexError):
                                         pass
                             else:
@@ -373,11 +373,12 @@ class SegmentationTrainer:
                                         if hasattr(metrics_dict, attr_name):
                                             value = getattr(metrics_dict, attr_name)
                                             if value is not None:
-                                                metrics[attr_name] = float(value)
+                                                training_metrics[attr_name] = float(value)
                                     except (ValueError, TypeError, AttributeError):
                                         pass
                         
-                        # Также пытаемся получить метрики из результатов валидации
+                        # Извлекаем метрики валидации
+                        validation_metrics = {}
                         if hasattr(trainer, 'validator') and trainer.validator:
                             if hasattr(trainer.validator, 'metrics'):
                                 val_metrics = trainer.validator.metrics
@@ -394,13 +395,34 @@ class SegmentationTrainer:
                                             if hasattr(val_metrics, attr_name):
                                                 value = getattr(val_metrics, attr_name)
                                                 if value is not None:
-                                                    metrics[metric_key] = float(value)
+                                                    validation_metrics[metric_key] = float(value)
                                         except (ValueError, TypeError, AttributeError):
                                             pass
                         
+                        # Сохраняем метрики в базу данных
+                        if self.metrics_tracker:
+                            # Сохраняем метрики обучения
+                            if training_metrics:
+                                self.metrics_tracker.log_metrics_batch(
+                                    epoch=epoch,
+                                    phase='training',
+                                    metrics=training_metrics
+                                )
+                            
+                            # Сохраняем метрики валидации
+                            if validation_metrics:
+                                self.metrics_tracker.log_metrics_batch(
+                                    epoch=epoch,
+                                    phase='validation',
+                                    metrics=validation_metrics
+                                )
+                        
+                        # Объединяем метрики для callback
+                        all_metrics = {**training_metrics, **validation_metrics}
+                        
                         # Вызываем callback
                         if progress_callback:
-                            progress_callback(epoch, metrics)
+                            progress_callback(epoch, all_metrics)
                     except Exception as e:
                         # Используем print вместо logger, чтобы избежать проблем с логированием
                         try:
