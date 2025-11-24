@@ -1,0 +1,16 @@
+{
+  "task": "detect",
+  "model_type": "yolov11n",
+  "epochs": 20,
+  "batch_size": 16,
+  "image_size": 640,
+  "learning_rate": 0.01,
+  "device": "GPU (CUDA)",
+  "pretrained": true,
+  "augmentation": {
+    "mosaic": 1.0,
+    "mixup": 0.0,
+    "copy_paste": 0.3,
+    "fliplr": 0.5
+  }
+}
