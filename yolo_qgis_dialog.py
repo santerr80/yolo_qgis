@@ -872,6 +872,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     self.current_experiment_id
                 )
                 if success:
+                    self.is_training = False
+                    self.pushButtonStartTraining.setEnabled(True)
+                    self.pushButtonStopTraining.setEnabled(False)
                     self.labelTrainingStatus.setText("Тренировка остановлена")
                     self.textEditTrainingLog.append(
                         "Тренировка остановлена пользователем"
