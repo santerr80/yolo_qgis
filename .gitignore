@@ -170,6 +170,7 @@ weights/
 *.pt
 *.onnx
 *.engine
+training_configs/
 
 # Logs
 *.log
