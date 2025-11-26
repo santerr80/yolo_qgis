@@ -251,6 +251,7 @@ class DetectionTrainer:
         copy_paste: float = 0.3,
         fliplr: float = 0.5,
         exist_ok: bool = False,
+        resume: bool = False,
         progress_callback=None,
         status_callback=None,
     ) -> Dict[str, Any]:
@@ -272,6 +273,7 @@ class DetectionTrainer:
         :param copy_paste: Вероятность copy-paste
         :param fliplr: Вероятность горизонтального отражения
         :param exist_ok: Если True, YOLO будет перезаписывать результаты в существующей директории (без добавления run2, run3 и т.п.)
+        :param resume: Если True, обучение будет продолжено с последнего чекпоинта
         :param progress_callback: Callback для прогресса
         :param status_callback: Callback для статуса
         :return: Словарь с результатами обучения
@@ -333,6 +335,7 @@ class DetectionTrainer:
                 "project": save_dir or "runs",
                 "name": project_name,
                 "exist_ok": exist_ok,
+                "resume": resume,
                 "save": True,
                 "save_period": 10,  # Сохранять чекпоинты каждые 10 эпох
                 "plots": True,  # Графики сохраняются в файлы, не открываются

@@ -715,6 +715,20 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     self._on_task_type_changed
                 )
 
+            # Логика взаимного исключения для resume / pretrained
+            if hasattr(self, "checkBoxResume") and hasattr(self, "checkBoxPretrained"):
+
+                def _on_resume_state_changed(state):
+                    # Если включили resume, отключаем и блокируем "предобученные веса"
+                    if bool(state):
+                        self.checkBoxPretrained.setChecked(False)
+                        self.checkBoxPretrained.setEnabled(False)
+                    else:
+                        # При выключении resume снова разрешаем управлять флажком предобученных весов
+                        self.checkBoxPretrained.setEnabled(True)
+
+                self.checkBoxResume.stateChanged.connect(_on_resume_state_changed)
+
         except Exception as e:
             logger.error(f"Ошибка настройки соединений тренировки: {e}", exc_info=True)
 
@@ -817,6 +831,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 else False
             )
 
+            # Режим продолжения обучения с чекпоинта (resume)
+            resume = (
+                self.checkBoxResume.isChecked()
+                if hasattr(self, "checkBoxResume")
+                else False
+            )
+
             # Сохраняем путь к директории сохранения в историю
             if save_dir:
                 self.path_history.add_save_dir_path(save_dir)
@@ -836,6 +857,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         save_dir=save_dir,
                         project_name=project_name,
                         exist_ok=exist_ok,
+                        resume=resume,
                         **augmentation_params,
                     )
                 )
@@ -853,6 +875,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         save_dir=save_dir,
                         project_name=project_name,
                         exist_ok=exist_ok,
+                        resume=resume,
                         **augmentation_params,
                     )
                 )
@@ -1123,6 +1146,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     if hasattr(self, "checkBoxExistOk")
                     else False
                 ),
+                "resume": (
+                    self.checkBoxResume.isChecked()
+                    if hasattr(self, "checkBoxResume")
+                    else False
+                ),
                 "augmentation": (
                     {
                         "mosaic": self.doubleSpinBoxMosaic.value(),
@@ -1171,6 +1199,19 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Применяем режим exist_ok (если чекбокс есть в UI)
             if hasattr(self, "checkBoxExistOk") and "exist_ok" in config:
                 self.checkBoxExistOk.setChecked(bool(config["exist_ok"]))
+
+            # Применяем режим resume (если чекбокс есть в UI)
+            if hasattr(self, "checkBoxResume") and "resume" in config:
+                self.checkBoxResume.setChecked(bool(config["resume"]))
+
+                # Синхронизируем состояние с флажком предобученных весов:
+                # при активном resume флажок pretrained должен быть выключен и заблокирован
+                if hasattr(self, "checkBoxPretrained"):
+                    if config["resume"]:
+                        self.checkBoxPretrained.setChecked(False)
+                        self.checkBoxPretrained.setEnabled(False)
+                    else:
+                        self.checkBoxPretrained.setEnabled(True)
 
         except Exception as e:
             logger.error(f"Ошибка применения конфигурации: {e}", exc_info=True)

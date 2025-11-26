@@ -1056,6 +1056,16 @@
                 </property>
                </widget>
               </item>
+              <item row="3" column="0" colspan="2">
+               <widget class="QCheckBox" name="checkBoxResume">
+                <property name="toolTip">
+                 <string>Если включено, обучение будет продолжено с последнего сохранённого чекпоинта</string>
+                </property>
+                <property name="text">
+                 <string>Продолжить обучение с последнего чекпоинта</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </item>
