@@ -994,28 +994,38 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             return f"Ошибка форматирования результатов: {e}"
 
     def _get_model_type_from_text(self, model_text, task):
-        """Преобразует текст модели в тип модели"""
+        """Преобразует текст модели в тип модели
+
+        ВАЖНО: для линейки YOLO11 официальные имена моделей в ultralytics
+        используют формат без буквы 'v' (например, 'yolo11n.pt'), поэтому
+        здесь мы возвращаем строки без 'v', чтобы загрузка весов проходила
+        корректно.
+        """
         model_mapping = {
+            # Детекция YOLOv8
             "YOLOv8n (быстрая)": "yolov8n",
             "YOLOv8s (сбалансированная)": "yolov8s",
             "YOLOv8m (средняя)": "yolov8m",
             "YOLOv8l (большая)": "yolov8l",
             "YOLOv8x (максимальная)": "yolov8x",
-            "YOLOv11n (быстрая)": "yolov11n",
-            "YOLOv11s (сбалансированная)": "yolov11s",
-            "YOLOv11m (средняя)": "yolov11m",
-            "YOLOv11l (большая)": "yolov11l",
-            "YOLOv11x (максимальная)": "yolov11x",
+            # Детекция YOLO11 
+            "YOLOv11n (быстрая)": "yolo11n",
+            "YOLOv11s (сбалансированная)": "yolo11s",
+            "YOLOv11m (средняя)": "yolo11m",
+            "YOLOv11l (большая)": "yolo11l",
+            "YOLOv11x (максимальная)": "yolo11x",
+            # Сегментация YOLOv8
             "YOLOv8n-seg (быстрая)": "yolov8n-seg",
             "YOLOv8s-seg (сбалансированная)": "yolov8s-seg",
             "YOLOv8m-seg (средняя)": "yolov8m-seg",
             "YOLOv8l-seg (большая)": "yolov8l-seg",
             "YOLOv8x-seg (максимальная)": "yolov8x-seg",
-            "YOLOv11n-seg (быстрая)": "yolov11n-seg",
-            "YOLOv11s-seg (сбалансированная)": "yolov11s-seg",
-            "YOLOv11m-seg (средняя)": "yolov11m-seg",
-            "YOLOv11l-seg (большая)": "yolov11l-seg",
-            "YOLOv11x-seg (максимальная)": "yolov11x-seg",
+            # Сегментация YOLO11 
+            "YOLOv11n-seg (быстрая)": "yolo11n-seg",
+            "YOLOv11s-seg (сбалансированная)": "yolo11s-seg",
+            "YOLOv11m-seg (средняя)": "yolo11m-seg",
+            "YOLOv11l-seg (большая)": "yolo11l-seg",
+            "YOLOv11x-seg (максимальная)": "yolo11x-seg",
         }
         return model_mapping.get(model_text, "yolov8n")
 

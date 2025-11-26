@@ -242,6 +242,7 @@ class SegmentationTrainer:
         self.current_model = None
         self.training_thread = None
         self.is_training = False
+        self.should_stop = False
 
     def train(
         self,
@@ -288,6 +289,7 @@ class SegmentationTrainer:
                 return {"error": "Обучение уже выполняется"}
 
             self.is_training = True
+            self.should_stop = False
 
             # Устанавливаем переменные окружения для предотвращения создания новых процессов
             # Это критично для работы с GPU в QGIS
@@ -321,7 +323,9 @@ class SegmentationTrainer:
             model_name = model_type
             if pretrained:
                 # Загружаем предобученную модель
-                self.current_model = YOLO(f"{model_name}.pt")
+                # YOLO автоматически скачает модель, если она не найдена локально
+                # Передаем имя модели без .pt, чтобы YOLO мог автоматически загрузить её
+                self.current_model = YOLO(model_name)
             else:
                 # Создаем модель с нуля
                 self.current_model = YOLO(f"{model_name}.yaml")
@@ -381,6 +385,34 @@ class SegmentationTrainer:
 
             if status_callback:
                 status_callback("Начало обучения...")
+
+            # Создаем callback для остановки тренировки
+            def on_train_epoch_end(trainer):
+                """Callback вызывается в конце каждой эпохи обучения для проверки остановки"""
+                try:
+                    if self.should_stop:
+                        # Останавливаем обучение через различные способы
+                        # В Ultralytics YOLO используется trainer.stop для остановки
+                        if hasattr(trainer, 'stop'):
+                            trainer.stop = True
+                        # Альтернативный способ через модель
+                        if hasattr(trainer, 'model') and hasattr(trainer.model, 'stop'):
+                            trainer.model.stop = True
+                        # Еще один способ - через атрибут training
+                        if hasattr(trainer, 'training'):
+                            trainer.training = False
+                        logger.info("Остановка тренировки запрошена пользователем")
+                except Exception as e:
+                    logger.error(f"Ошибка в callback остановки: {e}", exc_info=False)
+
+            # Регистрируем callback остановки
+            try:
+                self.current_model.add_callback('on_train_epoch_end', on_train_epoch_end)
+            except AttributeError:
+                # Если метод add_callback не существует, пробуем через параметр callbacks
+                if "callbacks" not in train_args:
+                    train_args["callbacks"] = {}
+                train_args["callbacks"]["on_train_epoch_end"] = on_train_epoch_end
 
             # Создаем кастомный callback для обновления прогресса
             if progress_callback:
@@ -495,7 +527,22 @@ class SegmentationTrainer:
                     train_args["callbacks"]["on_fit_epoch_end"] = on_fit_epoch_end
 
             # Запускаем обучение
-            results = self.current_model.train(**train_args)
+            try:
+                results = self.current_model.train(**train_args)
+            except KeyboardInterrupt:
+                # Обработка прерывания обучения
+                self.should_stop = False
+                self.is_training = False
+                if self.metrics_tracker:
+                    self.metrics_tracker.complete_experiment(status="cancelled")
+                return {
+                    "success": False,
+                    "experiment_id": experiment_id,
+                    "error": "Обучение прервано пользователем",
+                }
+
+            # Проверяем, была ли остановка запрошена
+            was_cancelled = self.should_stop
 
             # Извлекаем метрики из результатов
             final_metrics = {}
@@ -504,11 +551,31 @@ class SegmentationTrainer:
 
             # Логируем финальные метрики
             if self.metrics_tracker:
-                self.metrics_tracker.complete_experiment(
-                    status="completed", final_metrics=final_metrics
-                )
+                if was_cancelled:
+                    self.metrics_tracker.complete_experiment(
+                        status="cancelled", final_metrics=final_metrics
+                    )
+                else:
+                    self.metrics_tracker.complete_experiment(
+                        status="completed", final_metrics=final_metrics
+                    )
 
+            # Сбрасываем флаги
             self.is_training = False
+            self.should_stop = False
+
+            if was_cancelled:
+                return {
+                    "success": False,
+                    "experiment_id": experiment_id,
+                    "model_path": (
+                        str(results.save_dir / "weights" / "best.pt")
+                        if hasattr(results, "save_dir")
+                        else None
+                    ),
+                    "metrics": final_metrics,
+                    "message": "Обучение остановлено пользователем",
+                }
 
             return {
                 "success": True,
@@ -525,6 +592,7 @@ class SegmentationTrainer:
         except Exception as e:
             logger.error(f"Ошибка обучения: {e}", exc_info=True)
             self.is_training = False
+            self.should_stop = False
 
             if self.metrics_tracker:
                 self.metrics_tracker.complete_experiment(status="failed")
@@ -592,9 +660,12 @@ class SegmentationTrainer:
         :return: True если успешно
         """
         try:
-            if self.current_model and self.is_training:
-                # Ultralytics не поддерживает прямую отмену, но можно попробовать
-                self.is_training = False
+            if self.is_training:
+                # Устанавливаем флаг остановки
+                # Callback on_train_epoch_end проверит этот флаг и остановит обучение
+                self.should_stop = True
+                logger.info("Запрос на остановку тренировки установлен")
+                
                 if self.metrics_tracker:
                     self.metrics_tracker.complete_experiment(status="cancelled")
                 return True
