@@ -1046,6 +1046,16 @@
                 </property>
                </widget>
               </item>
+              <item row="2" column="0" colspan="2">
+               <widget class="QCheckBox" name="checkBoxExistOk">
+                <property name="toolTip">
+                 <string>Если включено, новые запуски будут перезаписывать результаты в одной и той же папке, без автоматического добавления номеров (run2, run3...)</string>
+                </property>
+                <property name="text">
+                 <string>Перезаписывать существующий проект (exist_ok)</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </item>

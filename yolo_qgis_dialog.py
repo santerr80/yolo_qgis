@@ -810,6 +810,13 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             project_name = self.lineEditProjectName.text() or "yolo_training"
             save_dir = self.fileWidgetSaveDir.filePath()
 
+            # Режим перезаписи результатов (exist_ok)
+            exist_ok = (
+                self.checkBoxExistOk.isChecked()
+                if hasattr(self, "checkBoxExistOk")
+                else False
+            )
+
             # Сохраняем путь к директории сохранения в историю
             if save_dir:
                 self.path_history.add_save_dir_path(save_dir)
@@ -828,6 +835,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         pretrained=pretrained,
                         save_dir=save_dir,
                         project_name=project_name,
+                        exist_ok=exist_ok,
                         **augmentation_params,
                     )
                 )
@@ -844,6 +852,7 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         pretrained=pretrained,
                         save_dir=save_dir,
                         project_name=project_name,
+                        exist_ok=exist_ok,
                         **augmentation_params,
                     )
                 )
@@ -1109,6 +1118,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 "learning_rate": self.doubleSpinBoxLearningRate.value(),
                 "device": self.comboBoxDevice.currentText(),
                 "pretrained": self.checkBoxPretrained.isChecked(),
+                "exist_ok": (
+                    self.checkBoxExistOk.isChecked()
+                    if hasattr(self, "checkBoxExistOk")
+                    else False
+                ),
                 "augmentation": (
                     {
                         "mosaic": self.doubleSpinBoxMosaic.value(),
@@ -1153,6 +1167,10 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     self.doubleSpinBoxCopyPaste.setValue(aug["copy_paste"])
                 if "fliplr" in aug:
                     self.doubleSpinBoxFlipLR.setValue(aug["fliplr"])
+
+            # Применяем режим exist_ok (если чекбокс есть в UI)
+            if hasattr(self, "checkBoxExistOk") and "exist_ok" in config:
+                self.checkBoxExistOk.setChecked(bool(config["exist_ok"]))
 
         except Exception as e:
             logger.error(f"Ошибка применения конфигурации: {e}", exc_info=True)

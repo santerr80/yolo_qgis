@@ -154,6 +154,7 @@ class YOLOTrainingManager(QObject):
         pretrained: bool = True,
         save_dir: str = None,
         project_name: str = "yolo_training",
+        exist_ok: bool = False,
         **augmentation_params,
     ) -> Optional[str]:
         """
@@ -169,6 +170,7 @@ class YOLOTrainingManager(QObject):
         :param pretrained: Использовать предобученные веса
         :param save_dir: Директория сохранения
         :param project_name: Название проекта
+        :param exist_ok: Если True, результаты будут записываться в одну и ту же директорию без автоматического добавления суффиксов
         :param augmentation_params: Параметры аугментации
         :return: ID эксперимента или None
         """
@@ -223,6 +225,7 @@ class YOLOTrainingManager(QObject):
                 "pretrained": pretrained,
                 "save_dir": save_dir,
                 "project_name": project_name,
+                "exist_ok": exist_ok,
                 "status_callback": lambda msg: self.status_message.emit(msg),
                 "progress_callback": lambda epoch, metrics: self.training_progress.emit(
                     epoch, metrics
@@ -258,6 +261,7 @@ class YOLOTrainingManager(QObject):
         pretrained: bool = True,
         save_dir: str = None,
         project_name: str = "yolo_training",
+        exist_ok: bool = False,
         **augmentation_params,
     ) -> Optional[str]:
         """
@@ -273,6 +277,7 @@ class YOLOTrainingManager(QObject):
         :param pretrained: Использовать предобученные веса
         :param save_dir: Директория сохранения
         :param project_name: Название проекта
+        :param exist_ok: Если True, результаты будут записываться в одну и ту же директорию без автоматического добавления суффиксов
         :param augmentation_params: Параметры аугментации
         :return: ID эксперимента или None
         """
@@ -327,6 +332,7 @@ class YOLOTrainingManager(QObject):
                 "pretrained": pretrained,
                 "save_dir": save_dir,
                 "project_name": project_name,
+                "exist_ok": exist_ok,
                 "status_callback": lambda msg: self.status_message.emit(msg),
                 "progress_callback": lambda epoch, metrics: self.training_progress.emit(
                     epoch, metrics
