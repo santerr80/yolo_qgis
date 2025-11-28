@@ -718,7 +718,8 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             if hasattr(self, "pushButtonExportExperiment"):
                 self.pushButtonExportExperiment.clicked.connect(self._export_experiment)
             if hasattr(self, "pushButtonGeneratePlots"):
-                self.pushButtonGeneratePlots.clicked.connect(self._generate_plots)
+                # Кнопка больше не нужна, скрываем её из интерфейса
+                self.pushButtonGeneratePlots.hide()
             if hasattr(self, "pushButtonSavePlots"):
                 self.pushButtonSavePlots.clicked.connect(self._save_plots)
 
@@ -1643,6 +1644,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             # Загружаем и отображаем метрики из базы данных
             self._load_metrics_from_database(experiment_id)
 
+            # Автоматически генерируем и отображаем графики для выбранного эксперимента
+            self._generate_plots(silent=True)
+
         except Exception as e:
             logger.error(f"Ошибка выбора эксперимента: {e}", exc_info=True)
             import traceback
@@ -1879,8 +1883,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self, "Информация", "Функция экспорта эксперимента будет реализована"
         )
 
-    def _generate_plots(self):
-        """Генерирует и отображает графики метрик для выбранного эксперимента"""
+    def _generate_plots(self, silent: bool = False):
+        """Генерирует и отображает графики метрик для выбранного эксперимента
+
+        :param silent: Если True, не показывать информационные диалоги
+        """
         try:
             # Проверяем, что есть менеджер тренировки и список экспериментов
             if not self.training_manager or not hasattr(self, "listWidgetExperiments"):
@@ -1966,11 +1973,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 # Сохраняем путь к последнему сгенерированному графику для функции _save_plots
                 self._last_metrics_plot_path = output_path
 
-            QtWidgets.QMessageBox.information(
-                self,
-                "Успех",
-                "Графики метрик успешно сгенерированы.",
-            )
+            if not silent:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Успех",
+                    "Графики метрик успешно сгенерированы.",
+                )
 
         except Exception as e:
             logger.error(f"Ошибка генерации графиков: {e}", exc_info=True)
