@@ -176,3 +176,5 @@ training_configs/
 *.log
 logs/
 
+# Plots
+plots/

@@ -30,12 +30,14 @@ class YoloQgisDialogTest(unittest.TestCase):
 
     def test_icon_png(self):
         """Test we can click OK."""
-        path = ":/plugins/YoloQgis/icon.png"
+        # Path must match the prefix defined in resources.qrc (`/plugins/yolo_qgis`)
+        path = ":/plugins/yolo_qgis/icon.png"
         icon = QIcon(path)
         self.assertFalse(icon.isNull())
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(YoloQgisResourcesTest)
+    # Run tests defined in this module
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(YoloQgisDialogTest)
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)

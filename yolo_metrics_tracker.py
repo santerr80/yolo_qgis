@@ -461,10 +461,44 @@ class MetricsVisualizer:
 
             matplotlib.use("Agg")  # Используем backend без GUI
 
-            # Группируем метрики по эпохам и фазам
+            # Локальная функция нормализации имён метрик (как в диалоге QGIS)
+            def _normalize_metric_name(metric_name: str) -> str:
+                if not metric_name:
+                    return metric_name
+
+                normalized = metric_name
+                # Удаляем префиксы metrics/ и val/
+                if normalized.startswith("metrics/"):
+                    normalized = normalized[8:]
+                elif normalized.startswith("val/"):
+                    normalized = normalized[4:]
+
+                # Удаляем суффиксы вида "(B)" или "(B-1)" и т.п.
+                if normalized.endswith("(B)"):
+                    normalized = normalized[:-3]
+                elif "(" in normalized:
+                    idx = normalized.rfind("(")
+                    if idx > 0:
+                        normalized = normalized[:idx]
+
+                return normalized.strip()
+
+            # Группируем метрики по эпохам и фазам с нормализацией имён
             epochs = sorted(set(m["epoch"] for m in metrics_data))
             training_metrics = {}
             validation_metrics = {}
+
+            # Дополнительно агрегируем loss по эпохам, чтобы можно было построить
+            # кривую общего loss даже если в БД есть только box_loss / cls_loss / dfl_loss и т.п.
+            aggregated_training_loss = {}
+            aggregated_validation_loss = {}
+            loss_base_keys = {
+                "loss",
+                "train_loss",
+                "box_loss",
+                "cls_loss",
+                "dfl_loss",
+            }
 
             for metric in metrics_data:
                 epoch = metric["epoch"]
@@ -472,18 +506,55 @@ class MetricsVisualizer:
                 name = metric["metric_name"]
                 value = metric["metric_value"]
 
-                if phase == "training":
-                    if name not in training_metrics:
-                        training_metrics[name] = []
-                    training_metrics[name].append((epoch, value))
-                elif phase == "validation":
-                    if name not in validation_metrics:
-                        validation_metrics[name] = []
-                    validation_metrics[name].append((epoch, value))
+                # Нормализуем имя метрики
+                normalized_name = _normalize_metric_name(name)
 
-            # Создаем графики
-            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-            fig.suptitle("Training Metrics", fontsize=16)
+                # Для val/* и metrics/* считаем, что это метрики валидации
+                if name.startswith("val/") or name.startswith("metrics/"):
+                    phase = "validation"
+
+                target = None
+                if phase == "training":
+                    target = training_metrics
+                elif phase == "validation":
+                    target = validation_metrics
+
+                if target is not None:
+                    if normalized_name not in target:
+                        target[normalized_name] = []
+                    target[normalized_name].append((epoch, value))
+
+                    # Пытаемся агрегировать loss по эпохам:
+                    # - учитываем базовые ключи (loss, train_loss, box_loss, cls_loss, dfl_loss)
+                    # - а также любые метрики, в названии которых встречается "loss"
+                    is_loss_like = (
+                        normalized_name in loss_base_keys
+                        or "loss" in normalized_name.lower()
+                    )
+                    if is_loss_like:
+                        if phase == "training":
+                            aggregated_training_loss[epoch] = (
+                                aggregated_training_loss.get(epoch, 0.0) + value
+                            )
+                        elif phase == "validation":
+                            aggregated_validation_loss[epoch] = (
+                                aggregated_validation_loss.get(epoch, 0.0) + value
+                            )
+
+            # После прохода по всем метрикам добавляем агрегированный loss,
+            # чтобы он был доступен по ключу "loss" для построения графиков
+            if aggregated_training_loss and "loss" not in training_metrics:
+                training_metrics["loss"] = sorted(
+                    aggregated_training_loss.items(), key=lambda x: x[0]
+                )
+            if aggregated_validation_loss and "loss" not in validation_metrics:
+                validation_metrics["loss"] = sorted(
+                    aggregated_validation_loss.items(), key=lambda x: x[0]
+                )
+
+            # Создаем графики с увеличенным размером и более крупными подписями
+            fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+            fig.suptitle("Training Metrics", fontsize=18)
 
             # Loss
             ax = axes[0, 0]
@@ -503,9 +574,9 @@ class MetricsVisualizer:
                     label="Val Loss",
                     marker="s",
                 )
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("Loss")
-            ax.set_title("Loss")
+            ax.set_xlabel("Epoch", fontsize=12)
+            ax.set_ylabel("Loss", fontsize=12)
+            ax.set_title("Loss", fontsize=14)
             ax.legend()
             ax.grid(True)
 
@@ -520,9 +591,9 @@ class MetricsVisualizer:
                     marker="o",
                     color="green",
                 )
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("mAP50")
-            ax.set_title("mAP50")
+            ax.set_xlabel("Epoch", fontsize=12)
+            ax.set_ylabel("mAP50", fontsize=12)
+            ax.set_title("mAP50", fontsize=14)
             ax.legend()
             ax.grid(True)
 
@@ -537,9 +608,9 @@ class MetricsVisualizer:
                     marker="o",
                     color="blue",
                 )
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("Precision")
-            ax.set_title("Precision")
+            ax.set_xlabel("Epoch", fontsize=12)
+            ax.set_ylabel("Precision", fontsize=12)
+            ax.set_title("Precision", fontsize=14)
             ax.legend()
             ax.grid(True)
 
@@ -554,18 +625,18 @@ class MetricsVisualizer:
                     marker="o",
                     color="red",
                 )
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("Recall")
-            ax.set_title("Recall")
+            ax.set_xlabel("Epoch", fontsize=12)
+            ax.set_ylabel("Recall", fontsize=12)
+            ax.set_title("Recall", fontsize=14)
             ax.legend()
             ax.grid(True)
 
             plt.tight_layout()
 
             if output_path:
-                plt.savefig(output_path, dpi=150, bbox_inches="tight")
+                plt.savefig(output_path, dpi=200, bbox_inches="tight")
             else:
-                plt.savefig("training_metrics.png", dpi=150, bbox_inches="tight")
+                plt.savefig("training_metrics.png", dpi=200, bbox_inches="tight")
 
             plt.close()
 

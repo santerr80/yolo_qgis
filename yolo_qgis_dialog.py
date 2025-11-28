@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 
 from qgis.PyQt import uic
-from qgis.PyQt import QtWidgets
+from qgis.PyQt import QtWidgets, QtGui
 from qgis.PyQt.QtCore import Qt
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
@@ -1828,16 +1828,138 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         )
 
     def _generate_plots(self):
-        """Генерирует графики метрик"""
-        QtWidgets.QMessageBox.information(
-            self, "Информация", "Функция генерации графиков будет реализована"
-        )
+        """Генерирует и отображает графики метрик для выбранного эксперимента"""
+        try:
+            # Проверяем, что есть менеджер тренировки и список экспериментов
+            if not self.training_manager or not hasattr(self, "listWidgetExperiments"):
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Компоненты тренировки не инициализированы или список экспериментов недоступен.",
+                )
+                return
+
+            current_item = self.listWidgetExperiments.currentItem()
+            if not current_item:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Выберите эксперимент в списке \"Эксперименты\" для построения графиков.",
+                )
+                return
+
+            experiment_id = current_item.data(Qt.UserRole)
+            if not experiment_id:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Не удалось определить ID эксперимента.",
+                )
+                return
+
+            # Получаем метрики из базы данных
+            metrics_data = (
+                self.training_manager.metrics_tracker.database.get_experiment_metrics(
+                    experiment_id
+                )
+            )
+            if not metrics_data:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Информация",
+                    "Для выбранного эксперимента нет сохранённых метрик.",
+                )
+                return
+
+            # Определяем каталог для графиков (plots/ рядом с БД плагина)
+            plugin_dir = os.path.dirname(__file__)
+            plots_dir = os.path.join(plugin_dir, "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+
+            output_path = os.path.join(plots_dir, f"{experiment_id}_metrics.png")
+
+            # Создаём графики через MetricsVisualizer
+            MetricsVisualizer.plot_training_curves(
+                metrics_data=metrics_data, output_path=output_path
+            )
+
+            if not os.path.exists(output_path):
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Не удалось создать файл с графиками метрик.",
+                )
+                return
+
+            # Загружаем и отображаем картинку в labelMetricsPlot
+            if hasattr(self, "labelMetricsPlot"):
+                pixmap = QtGui.QPixmap(output_path)
+                if pixmap.isNull():
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Ошибка",
+                        "Не удалось загрузить изображение графиков.",
+                    )
+                    return
+
+                self.labelMetricsPlot.setPixmap(
+                    pixmap.scaled(
+                        self.labelMetricsPlot.size(),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
+                )
+                self.labelMetricsPlot.setAlignment(Qt.AlignCenter)
+
+                # Сохраняем путь к последнему сгенерированному графику для функции _save_plots
+                self._last_metrics_plot_path = output_path
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Успех",
+                "Графики метрик успешно сгенерированы.",
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка генерации графиков: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Ошибка", f"Ошибка генерации графиков: {e}"
+            )
 
     def _save_plots(self):
-        """Сохраняет графики"""
-        QtWidgets.QMessageBox.information(
-            self, "Информация", "Функция сохранения графиков будет реализована"
-        )
+        """Сохраняет текущие графики метрик в выбранный файл"""
+        try:
+            plot_path = getattr(self, "_last_metrics_plot_path", None)
+            if not plot_path or not os.path.exists(plot_path):
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Информация",
+                    "Сначала сгенерируйте графики метрик перед сохранением.",
+                )
+                return
+
+            default_name = os.path.basename(plot_path)
+            out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Сохранить графики метрик",
+                default_name,
+                "PNG (*.png);;Все файлы (*.*)",
+            )
+            if not out_path:
+                return
+
+            import shutil
+
+            shutil.copyfile(plot_path, out_path)
+            QtWidgets.QMessageBox.information(
+                self, "Успех", f"Графики метрик сохранены в:\n{out_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка сохранения графиков: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Ошибка", f"Ошибка сохранения графиков: {e}"
+            )
 
     def _display_validation_results(self, results):
         """Отображает результаты валидации"""
