@@ -483,22 +483,9 @@ class MetricsVisualizer:
 
                 return normalized.strip()
 
-            # Группируем метрики по эпохам и фазам с нормализацией имён
-            epochs = sorted(set(m["epoch"] for m in metrics_data))
-            training_metrics = {}
-            validation_metrics = {}
-
-            # Дополнительно агрегируем loss по эпохам, чтобы можно было построить
-            # кривую общего loss даже если в БД есть только box_loss / cls_loss / dfl_loss и т.п.
-            aggregated_training_loss = {}
-            aggregated_validation_loss = {}
-            loss_base_keys = {
-                "loss",
-                "train_loss",
-                "box_loss",
-                "cls_loss",
-                "dfl_loss",
-            }
+            # Группируем метрики по фазам с нормализацией имён
+            training_metrics: Dict[str, List[tuple]] = {}
+            validation_metrics: Dict[str, List[tuple]] = {}
 
             for metric in metrics_data:
                 epoch = metric["epoch"]
@@ -513,74 +500,52 @@ class MetricsVisualizer:
                 if name.startswith("val/") or name.startswith("metrics/"):
                     phase = "validation"
 
-                target = None
-                if phase == "training":
-                    target = training_metrics
-                elif phase == "validation":
-                    target = validation_metrics
+                target = training_metrics if phase == "training" else (
+                    validation_metrics if phase == "validation" else None
+                )
 
                 if target is not None:
-                    if normalized_name not in target:
-                        target[normalized_name] = []
-                    target[normalized_name].append((epoch, value))
-
-                    # Пытаемся агрегировать loss по эпохам:
-                    # - учитываем базовые ключи (loss, train_loss, box_loss, cls_loss, dfl_loss)
-                    # - а также любые метрики, в названии которых встречается "loss"
-                    is_loss_like = (
-                        normalized_name in loss_base_keys
-                        or "loss" in normalized_name.lower()
-                    )
-                    if is_loss_like:
-                        if phase == "training":
-                            aggregated_training_loss[epoch] = (
-                                aggregated_training_loss.get(epoch, 0.0) + value
-                            )
-                        elif phase == "validation":
-                            aggregated_validation_loss[epoch] = (
-                                aggregated_validation_loss.get(epoch, 0.0) + value
-                            )
-
-            # После прохода по всем метрикам добавляем агрегированный loss,
-            # чтобы он был доступен по ключу "loss" для построения графиков
-            if aggregated_training_loss and "loss" not in training_metrics:
-                training_metrics["loss"] = sorted(
-                    aggregated_training_loss.items(), key=lambda x: x[0]
-                )
-            if aggregated_validation_loss and "loss" not in validation_metrics:
-                validation_metrics["loss"] = sorted(
-                    aggregated_validation_loss.items(), key=lambda x: x[0]
-                )
+                    target.setdefault(normalized_name, []).append((epoch, value))
 
             # Создаем графики с увеличенным размером и более крупными подписями
             fig, axes = plt.subplots(2, 2, figsize=(16, 12))
             fig.suptitle("Training Metrics", fontsize=18)
 
-            # Loss
+            # LOSS: объединяем box_loss, cls_loss, dfl_loss на одном графике
             ax = axes[0, 0]
-            if "loss" in training_metrics:
-                train_loss = sorted(training_metrics["loss"], key=lambda x: x[0])
-                ax.plot(
-                    [x[0] for x in train_loss],
-                    [x[1] for x in train_loss],
-                    label="Train Loss",
-                    marker="o",
-                )
-            if "loss" in validation_metrics:
-                val_loss = sorted(validation_metrics["loss"], key=lambda x: x[0])
-                ax.plot(
-                    [x[0] for x in val_loss],
-                    [x[1] for x in val_loss],
-                    label="Val Loss",
-                    marker="s",
-                )
+            loss_components = [
+                ("box_loss", "Box loss", "tab:blue"),
+                ("cls_loss", "Cls loss", "tab:orange"),
+                ("dfl_loss", "DFL loss", "tab:green"),
+            ]
+            for key, title, color in loss_components:
+                if key in training_metrics:
+                    train_vals = sorted(training_metrics[key], key=lambda x: x[0])
+                    ax.plot(
+                        [x[0] for x in train_vals],
+                        [x[1] for x in train_vals],
+                        label=f"Train {title}",
+                        marker="o",
+                        linestyle="-",
+                        color=color,
+                    )
+                if key in validation_metrics:
+                    val_vals = sorted(validation_metrics[key], key=lambda x: x[0])
+                    ax.plot(
+                        [x[0] for x in val_vals],
+                        [x[1] for x in val_vals],
+                        label=f"Val {title}",
+                        marker="s",
+                        linestyle="--",
+                        color=color,
+                    )
             ax.set_xlabel("Epoch", fontsize=12)
-            ax.set_ylabel("Loss", fontsize=12)
-            ax.set_title("Loss", fontsize=14)
+            ax.set_ylabel("Loss value", fontsize=12)
+            ax.set_title("Loss components (box / cls / dfl)", fontsize=14)
             ax.legend()
             ax.grid(True)
 
-            # mAP50
+            # mAP50 (валидационные метрики)
             ax = axes[0, 1]
             if "mAP50" in validation_metrics:
                 map50 = sorted(validation_metrics["mAP50"], key=lambda x: x[0])
@@ -593,11 +558,11 @@ class MetricsVisualizer:
                 )
             ax.set_xlabel("Epoch", fontsize=12)
             ax.set_ylabel("mAP50", fontsize=12)
-            ax.set_title("mAP50", fontsize=14)
+            ax.set_title("mAP50 (val)", fontsize=14)
             ax.legend()
             ax.grid(True)
 
-            # Precision
+            # Precision (валидационные метрики)
             ax = axes[1, 0]
             if "precision" in validation_metrics:
                 precision = sorted(validation_metrics["precision"], key=lambda x: x[0])
@@ -610,11 +575,11 @@ class MetricsVisualizer:
                 )
             ax.set_xlabel("Epoch", fontsize=12)
             ax.set_ylabel("Precision", fontsize=12)
-            ax.set_title("Precision", fontsize=14)
+            ax.set_title("Precision (val)", fontsize=14)
             ax.legend()
             ax.grid(True)
 
-            # Recall
+            # Recall (валидационные метрики)
             ax = axes[1, 1]
             if "recall" in validation_metrics:
                 recall = sorted(validation_metrics["recall"], key=lambda x: x[0])
@@ -627,7 +592,7 @@ class MetricsVisualizer:
                 )
             ax.set_xlabel("Epoch", fontsize=12)
             ax.set_ylabel("Recall", fontsize=12)
-            ax.set_title("Recall", fontsize=14)
+            ax.set_title("Recall (val)", fontsize=14)
             ax.legend()
             ax.grid(True)
 

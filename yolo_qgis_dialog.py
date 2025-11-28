@@ -54,6 +54,25 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
         self.setupUi(self)
 
+        # Настройка таблицы метрик: добавляем отдельные столбцы для box_loss, cls_loss, dfl_loss
+        try:
+            if hasattr(self, "tableWidgetMetrics"):
+                self.tableWidgetMetrics.setColumnCount(8)
+                self.tableWidgetMetrics.setHorizontalHeaderLabels(
+                    [
+                        "Epoch",
+                        "mAP50",
+                        "mAP50-95",
+                        "Precision",
+                        "Recall",
+                        "Box loss",
+                        "Cls loss",
+                        "DFL loss",
+                    ]
+                )
+        except Exception as e:
+            logger.warning(f"Не удалось инициализировать таблицу метрик: {e}")
+
         # Инициализация компонентов тренировки
         self.training_manager = None
         self.config_manager = None
@@ -1340,7 +1359,17 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             self.tableWidgetMetrics.setItem(
                 row_count,
                 5,
-                QtWidgets.QTableWidgetItem(f"{metrics.get('loss', 0):.4f}"),
+                QtWidgets.QTableWidgetItem(f"{metrics.get('box_loss', 0):.4f}"),
+            )
+            self.tableWidgetMetrics.setItem(
+                row_count,
+                6,
+                QtWidgets.QTableWidgetItem(f"{metrics.get('cls_loss', 0):.4f}"),
+            )
+            self.tableWidgetMetrics.setItem(
+                row_count,
+                7,
+                QtWidgets.QTableWidgetItem(f"{metrics.get('dfl_loss', 0):.4f}"),
             )
 
             # Прокручиваем к последней строке
@@ -1444,7 +1473,18 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 precision = validation_metrics.get("precision", 0.0)
                 recall = validation_metrics.get("recall", 0.0)
 
-                # Извлекаем loss из validation метрик (val/box_loss, val/cls_loss, val/dfl_loss)
+                # Извлекаем loss-компоненты
+                box_loss = validation_metrics.get(
+                    "box_loss", training_metrics.get("box_loss", 0.0)
+                )
+                cls_loss = validation_metrics.get(
+                    "cls_loss", training_metrics.get("cls_loss", 0.0)
+                )
+                dfl_loss = validation_metrics.get(
+                    "dfl_loss", training_metrics.get("dfl_loss", 0.0)
+                )
+
+                # Извлекаем суммарный loss из validation метрик (val/box_loss, val/cls_loss, val/dfl_loss)
                 loss_value = 0.0
                 loss_keys = ["box_loss", "cls_loss", "dfl_loss"]
                 for loss_key in loss_keys:
@@ -1478,12 +1518,14 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                             if "loss" in key.lower():
                                 loss_value = value
                                 break
-
                 row_metrics = {
                     "mAP50": map50,
                     "mAP50-95": map50_95,
                     "precision": precision,
                     "recall": recall,
+                    "box_loss": box_loss,
+                    "cls_loss": cls_loss,
+                    "dfl_loss": dfl_loss,
                     "loss": loss_value,
                 }
 
@@ -1517,7 +1559,17 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.tableWidgetMetrics.setItem(
                     row_count,
                     5,
-                    QtWidgets.QTableWidgetItem(f"{row_metrics['loss']:.4f}"),
+                    QtWidgets.QTableWidgetItem(f"{row_metrics['box_loss']:.4f}"),
+                )
+                self.tableWidgetMetrics.setItem(
+                    row_count,
+                    6,
+                    QtWidgets.QTableWidgetItem(f"{row_metrics['cls_loss']:.4f}"),
+                )
+                self.tableWidgetMetrics.setItem(
+                    row_count,
+                    7,
+                    QtWidgets.QTableWidgetItem(f"{row_metrics['dfl_loss']:.4f}"),
                 )
 
             # Прокручиваем к последней строке
