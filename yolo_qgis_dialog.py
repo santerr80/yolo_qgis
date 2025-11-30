@@ -10,6 +10,7 @@ import os
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets, QtGui
@@ -39,6 +40,9 @@ from .yolo_segmentation_trainer import SegmentationTrainer, SegmentationDatasetA
 from .yolo_validation import AdvancedValidator, ModelComparator
 from .yolo_metrics_tracker import MetricsTracker, MetricsVisualizer
 from .path_history_manager import PathHistoryManager
+
+# --- ИМПОРТ МОДУЛЯ ДЕТЕКЦИИ ---
+from .yolo_detector import YOLODetector
 
 
 FORM_CLASS, _ = uic.loadUiType(
@@ -78,6 +82,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         self.config_manager = None
         self.current_experiment_id = None
         self.is_training = False
+
+        # Инициализация детектора
+        self.detector = YOLODetector()
 
         # Инициализация менеджера истории путей
         self.path_history = PathHistoryManager()
@@ -130,6 +137,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Подключение сигналов тренировки
         self._setup_training_connections()
+
+        # Подключение сигналов детекции
+        self._setup_detection_connections()
 
     def _update_size_values(self):
         """Автоматически пересчитывает размеры в метрах или пикселях."""
@@ -751,6 +761,50 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
         except Exception as e:
             logger.error(f"Ошибка настройки соединений тренировки: {e}", exc_info=True)
+
+    def _setup_detection_connections(self):
+        """Настраивает соединения для интерфейса детекции"""
+        try:
+            # Устанавливаем фильтр для комбобокса растровых слоев
+            if hasattr(self, "mMapLayerComboBoxDetectionRaster"):
+                self.mMapLayerComboBoxDetectionRaster.setFilters(QgsMapLayerProxyModel.RasterLayer)
+                # Подключаем сигнал изменения слоя для обновления экстента
+                self.mMapLayerComboBoxDetectionRaster.layerChanged.connect(
+                    self._on_detection_raster_changed
+                )
+
+            # Настраиваем виджет экстента
+            if hasattr(self, "mExtentGroupBoxDetection"):
+                # Устанавливаем исходный CRS из проекта
+                project = QgsProject.instance()
+                if project.crs().isValid():
+                    self.mExtentGroupBoxDetection.setOriginalExtent(
+                        project.crs().bounds(), project.crs()
+                    )
+                    self.mExtentGroupBoxDetection.setCurrentExtent(
+                        project.crs().bounds(), project.crs()
+                    )
+
+            # Безопасное подключение кнопки детекции
+            if hasattr(self, "pushButtonStartDetection"):
+                self.pushButtonStartDetection.clicked.connect(self._start_detection)
+
+        except Exception as e:
+            logger.error(f"Ошибка настройки соединений детекции: {e}", exc_info=True)
+
+    def _on_detection_raster_changed(self, layer):
+        """Обработчик изменения растрового слоя для детекции"""
+        try:
+            if hasattr(self, "mExtentGroupBoxDetection") and layer:
+                # Обновляем экстент виджета на основе выбранного растра
+                if layer.isValid():
+                    extent = layer.extent()
+                    crs = layer.crs()
+                    if extent.isValid() and crs.isValid():
+                        self.mExtentGroupBoxDetection.setOriginalExtent(extent, crs)
+                        self.mExtentGroupBoxDetection.setCurrentExtent(extent, crs)
+        except Exception as e:
+            logger.warning(f"Ошибка обновления экстента: {e}", exc_info=True)
 
     def _on_task_type_changed(self, task_type):
         """Обработчик изменения типа задачи"""
@@ -2206,3 +2260,187 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
         
         # Если не нашли, возвращаем более информативное сообщение
         return f"Метрика: {metric_name}"
+
+    def _start_detection(self):
+        """Запускает процесс детекции объектов"""
+        try:
+            # Получаем путь к модели
+            model_path = ""
+            if hasattr(self, "fileWidgetDetectionModel"):
+                model_path = self.fileWidgetDetectionModel.filePath()
+                if model_path:
+                    self.path_history.add_model_path(model_path)
+
+            if not model_path:
+                QtWidgets.QMessageBox.warning(
+                    self, "Ошибка", "Выберите путь к модели (*.pt)!"
+                )
+                return
+
+            # Загружаем модель
+            self.labelDetectionStatus.setText("Загрузка модели...")
+            self.progressBarDetection.setValue(10)
+            self.textEditDetectionLog.append("Загрузка модели...")
+
+            load_result = self.detector.load_model(model_path)
+            if "error" in load_result:
+                QtWidgets.QMessageBox.critical(
+                    self, "Ошибка загрузки модели", load_result["error"]
+                )
+                self.labelDetectionStatus.setText("Ошибка загрузки модели")
+                self.progressBarDetection.setValue(0)
+                return
+
+            self.textEditDetectionLog.append(
+                f"Модель загружена: {load_result.get('num_classes', 0)} классов"
+            )
+
+            # Получаем источник данных
+            raster_layer = None
+            image_path = None
+
+            if hasattr(self, "mMapLayerComboBoxDetectionRaster"):
+                raster_layer = self.mMapLayerComboBoxDetectionRaster.currentLayer()
+
+            if hasattr(self, "fileWidgetDetectionImage"):
+                image_path = self.fileWidgetDetectionImage.filePath()
+
+            if not raster_layer and not image_path:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Ошибка",
+                    "Выберите растровый слой или изображение для детекции!",
+                )
+                return
+
+            # Получаем параметры детекции
+            conf_threshold = 0.25
+            iou_threshold = 0.45
+            image_size = None
+            device = "cpu"
+
+            if hasattr(self, "doubleSpinBoxDetectionConf"):
+                conf_threshold = self.doubleSpinBoxDetectionConf.value()
+            if hasattr(self, "doubleSpinBoxDetectionIoU"):
+                iou_threshold = self.doubleSpinBoxDetectionIoU.value()
+            if hasattr(self, "spinBoxDetectionImageSize"):
+                image_size = (
+                    self.spinBoxDetectionImageSize.value()
+                    if self.spinBoxDetectionImageSize.value() > 0
+                    else None
+                )
+            if hasattr(self, "comboBoxDetectionDevice"):
+                device_text = self.comboBoxDetectionDevice.currentText()
+                device = "0" if "GPU" in device_text else "cpu"
+
+            # Выполняем детекцию
+            self.labelDetectionStatus.setText("Выполнение детекции...")
+            self.progressBarDetection.setValue(30)
+
+            def progress_callback(message):
+                """Callback для обновления прогресса"""
+                if hasattr(self, "labelDetectionStatus"):
+                    self.labelDetectionStatus.setText(message)
+                if hasattr(self, "textEditDetectionLog"):
+                    self.textEditDetectionLog.append(message)
+
+            if raster_layer:
+                # Получаем выбранный экстент (если указан)
+                detection_extent = None
+                if hasattr(self, "mExtentGroupBoxDetection"):
+                    extent_groupbox = self.mExtentGroupBoxDetection
+                    if extent_groupbox.isValid():
+                        detection_extent = extent_groupbox.outputExtent()
+                        if detection_extent and detection_extent.isValid():
+                            self.textEditDetectionLog.append(
+                                f"Используется ограниченный экстент: "
+                                f"X: {detection_extent.xMinimum():.2f} - {detection_extent.xMaximum():.2f}, "
+                                f"Y: {detection_extent.yMinimum():.2f} - {detection_extent.yMaximum():.2f}"
+                            )
+
+                # Детекция на растровом слое
+                self.textEditDetectionLog.append(
+                    f"Детекция на растровом слое: {raster_layer.name()}"
+                )
+                results = self.detector.detect_on_raster(
+                    raster_layer=raster_layer,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    image_size=image_size,
+                    device=device,
+                    progress_callback=progress_callback,
+                    extent=detection_extent,
+                )
+                crs = raster_layer.crs()
+            else:
+                # Детекция на изображении
+                self.textEditDetectionLog.append(f"Детекция на изображении: {image_path}")
+                results = self.detector.detect_on_image(
+                    image_path=image_path,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    image_size=image_size,
+                    device=device,
+                )
+                crs = None
+
+            self.progressBarDetection.setValue(70)
+
+            # Проверяем результаты
+            if "error" in results:
+                QtWidgets.QMessageBox.critical(
+                    self, "Ошибка детекции", results["error"]
+                )
+                self.labelDetectionStatus.setText("Ошибка детекции")
+                self.progressBarDetection.setValue(0)
+                return
+
+            # Создаем векторный слой с результатами
+            self.labelDetectionStatus.setText("Создание векторного слоя...")
+            self.textEditDetectionLog.append("Создание векторного слоя...")
+
+            detections = results.get("detections", [])
+            if not detections:
+                QtWidgets.QMessageBox.information(
+                    self, "Информация", "Объекты не обнаружены"
+                )
+                self.labelDetectionStatus.setText("Объекты не обнаружены")
+                self.progressBarDetection.setValue(0)
+                return
+
+            # Используем CRS из результатов или растра
+            result_crs = results.get("crs") or crs
+
+            layer_name = f"Детекция_{raster_layer.name() if raster_layer else Path(image_path).stem}"
+            vector_layer = self.detector.create_vector_layer(
+                detections=detections,
+                layer_name=layer_name,
+                crs=result_crs,
+            )
+
+            # Добавляем слой в проект
+            QgsProject.instance().addMapLayer(vector_layer)
+
+            self.progressBarDetection.setValue(100)
+            self.labelDetectionStatus.setText(
+                f"Детекция завершена: найдено {len(detections)} объектов"
+            )
+            self.textEditDetectionLog.append(
+                f"Детекция завершена успешно. Найдено объектов: {len(detections)}"
+            )
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Успех",
+                f"Детекция завершена!\nНайдено объектов: {len(detections)}\nСлой добавлен в проект: {layer_name}",
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка детекции: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Ошибка", f"Ошибка выполнения детекции: {e}"
+            )
+            if hasattr(self, "labelDetectionStatus"):
+                self.labelDetectionStatus.setText("Ошибка детекции")
+            if hasattr(self, "progressBarDetection"):
+                self.progressBarDetection.setValue(0)

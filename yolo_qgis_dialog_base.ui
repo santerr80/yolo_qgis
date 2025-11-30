@@ -1595,27 +1595,226 @@
         <number>10</number>
        </property>
        <item>
-        <widget class="QLabel" name="detectLabel">
-         <property name="text">
-          <string>Detection functionality will be implemented here</string>
+        <widget class="QGroupBox" name="groupBoxDetectionModel">
+         <property name="title">
+          <string>Модель для детекции</string>
          </property>
-         <property name="alignment">
-          <set>Qt::AlignCenter</set>
-         </property>
+         <layout class="QGridLayout" name="gridLayout_detection_model">
+          <item row="0" column="0">
+           <widget class="QLabel" name="labelDetectionModelPath">
+            <property name="text">
+             <string>Путь к модели:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsFileWidget" name="fileWidgetDetectionModel">
+            <property name="filter">
+             <string>PyTorch models (*.pt)</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
        <item>
-        <spacer name="detectSpacer">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
+        <widget class="QGroupBox" name="groupBoxDetectionSource">
+         <property name="title">
+          <string>Источник данных</string>
          </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>40</height>
-          </size>
+         <layout class="QGridLayout" name="gridLayout_detection_source">
+          <item row="0" column="0">
+           <widget class="QLabel" name="labelDetectionRaster">
+            <property name="text">
+             <string>Растровый слой:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboBoxDetectionRaster"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="labelDetectionImage">
+            <property name="text">
+             <string>Или изображение:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QgsFileWidget" name="fileWidgetDetectionImage">
+            <property name="filter">
+             <string>Images (*.png *.jpg *.jpeg *.tif *.tiff)</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QgsExtentGroupBox" name="mExtentGroupBoxDetection">
+            <property name="title">
+             <string>Граничная рамка (опционально)</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBoxDetectionParams">
+         <property name="title">
+          <string>Параметры детекции</string>
          </property>
-        </spacer>
+         <layout class="QGridLayout" name="gridLayout_detection_params">
+          <item row="0" column="0">
+           <widget class="QLabel" name="labelDetectionConf">
+            <property name="text">
+             <string>Порог уверенности:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QDoubleSpinBox" name="doubleSpinBoxDetectionConf">
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="value">
+             <double>0.250000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="labelDetectionIoU">
+            <property name="text">
+             <string>Порог IoU:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QDoubleSpinBox" name="doubleSpinBoxDetectionIoU">
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="value">
+             <double>0.450000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="labelDetectionImageSize">
+            <property name="text">
+             <string>Размер изображения:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QSpinBox" name="spinBoxDetectionImageSize">
+            <property name="minimum">
+             <number>320</number>
+            </property>
+            <property name="maximum">
+             <number>2048</number>
+            </property>
+            <property name="singleStep">
+             <number>32</number>
+            </property>
+            <property name="value">
+             <number>640</number>
+            </property>
+            <property name="specialValueText">
+             <string>Автоматически</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="labelDetectionDevice">
+            <property name="text">
+             <string>Устройство:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QComboBox" name="comboBoxDetectionDevice">
+            <item>
+             <property name="text">
+              <string>CPU</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>GPU (CUDA)</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBoxDetectionOutput">
+         <property name="title">
+          <string>Результаты</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_detection_output">
+          <item>
+           <widget class="QLabel" name="labelDetectionStatus">
+            <property name="text">
+             <string>Готов к детекции</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QProgressBar" name="progressBarDetection">
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTextEdit" name="textEditDetectionLog" readonly="true">
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>100</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_detection_buttons">
+         <item>
+          <spacer name="detectButtonSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="pushButtonStartDetection">
+           <property name="text">
+            <string>Запустить детекцию</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
@@ -1683,6 +1882,11 @@
    <class>QgsMapLayerComboBox</class>
    <extends>QComboBox</extends>
    <header>qgsmaplayercombobox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>QgsExtentGroupBox</class>
+   <extends>QGroupBox</extends>
+   <header>qgsextentgroupbox.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
