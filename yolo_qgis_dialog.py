@@ -1820,12 +1820,44 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     f"{key}: {data.get('model', 'N/A')} ({data.get('value', 0):.4f})"
                 )
             self.textEditValidationLog.append("\n".join(summary_lines))
-            QtWidgets.QMessageBox.information(
-                self, "Сравнение завершено", "\n".join(summary_lines)
+            
+            # Предлагаем сохранить результаты сравнения
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Сравнение завершено",
+                "\n".join(summary_lines) + "\n\nСохранить результаты сравнения?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.Yes
             )
+            
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._export_comparison_results(comparison)
         except Exception as e:
             QtWidgets.QMessageBox.critical(
                 self, "Ошибка", f"Ошибка сравнения моделей: {e}"
+            )
+
+    def _export_comparison_results(self, comparison: dict):
+        """Экспортирует результаты сравнения моделей"""
+        try:
+            # Диалог выбора пути
+            default_name = (
+                f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
+            out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Сохранить результаты сравнения", default_name, "JSON (*.json)"
+            )
+            if not out_path:
+                return
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(comparison, f, indent=2, ensure_ascii=False)
+            QtWidgets.QMessageBox.information(
+                self, "Успех", f"Результаты сравнения сохранены в:\n{out_path}"
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, "Ошибка", f"Ошибка экспорта результатов сравнения: {e}"
             )
 
     def _export_validation_results(self, results: dict = None):
@@ -2029,21 +2061,34 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
             if "metrics" in results:
                 metrics = results["metrics"]
-                for i, (metric_name, value) in enumerate(metrics.items()):
-                    self.tableWidgetValidationResults.insertRow(i)
-                    self.tableWidgetValidationResults.setItem(
-                        i, 0, QtWidgets.QTableWidgetItem(metric_name)
-                    )
-                    self.tableWidgetValidationResults.setItem(
-                        i, 1, QtWidgets.QTableWidgetItem(f"{value:.4f}")
-                    )
-                    self.tableWidgetValidationResults.setItem(
-                        i,
-                        2,
-                        QtWidgets.QTableWidgetItem(
-                            self._get_metric_description(metric_name)
-                        ),
-                    )
+                row = 0
+                for metric_name, value in metrics.items():
+                    # Пропускаем словари (например, class_metrics, size_metrics из comprehensive validation)
+                    if isinstance(value, dict):
+                        continue
+                    # Проверяем, что значение можно преобразовать в число
+                    try:
+                        numeric_value = float(value)
+                        self.tableWidgetValidationResults.insertRow(row)
+                        # Используем красивое имя для отображения
+                        display_name = self._get_display_name_for_metric(metric_name)
+                        self.tableWidgetValidationResults.setItem(
+                            row, 0, QtWidgets.QTableWidgetItem(display_name)
+                        )
+                        self.tableWidgetValidationResults.setItem(
+                            row, 1, QtWidgets.QTableWidgetItem(f"{numeric_value:.4f}")
+                        )
+                        self.tableWidgetValidationResults.setItem(
+                            row,
+                            2,
+                            QtWidgets.QTableWidgetItem(
+                                self._get_metric_description(metric_name)
+                            ),
+                        )
+                        row += 1
+                    except (ValueError, TypeError):
+                        # Если значение не является числом, пропускаем его
+                        continue
 
             # Добавляем информацию в лог
             self.textEditValidationLog.append(
@@ -2055,13 +2100,109 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 f"Ошибка отображения результатов валидации: {e}", exc_info=True
             )
 
+    def _normalize_metric_name_for_description(self, metric_name):
+        """Нормализует имя метрики для поиска описания
+        
+        :param metric_name: Оригинальное имя метрики
+        :return: Нормализованное имя метрики (для поиска в словаре описаний)
+        """
+        if not metric_name:
+            return metric_name
+        
+        # Удаляем префиксы metrics/ и val/
+        normalized = metric_name
+        if normalized.startswith("metrics/"):
+            normalized = normalized[8:]  # Удаляем 'metrics/'
+        elif normalized.startswith("val/"):
+            normalized = normalized[4:]  # Удаляем 'val/'
+        
+        # Удаляем суффикс (B) или (B-1) и т.д.
+        if normalized.endswith("(B)"):
+            normalized = normalized[:-3]
+        elif "(" in normalized:
+            # Удаляем скобки с содержимым в конце
+            idx = normalized.rfind("(")
+            if idx > 0:
+                normalized = normalized[:idx]
+        
+        # Нормализуем различные варианты написания (приводим к нижнему регистру для поиска)
+        normalized = normalized.strip().lower()
+        
+        # Маппинг различных вариантов имен на стандартные ключи для поиска
+        name_mapping = {
+            "map50": "map50",
+            "map50-95": "map50-95",
+            "map": "map50-95",
+            "map_50": "map50",
+            "map_50_95": "map50-95",
+            "precision": "precision",
+            "prec": "precision",
+            "recall": "recall",
+            "rec": "recall",
+            "f1": "f1_score",
+            "f1_score": "f1_score",
+            "f1score": "f1_score",
+        }
+        
+        return name_mapping.get(normalized, normalized)
+    
+    def _get_display_name_for_metric(self, metric_name):
+        """Возвращает красивое имя метрики для отображения в таблице"""
+        # Нормализуем для поиска
+        normalized = self._normalize_metric_name_for_description(metric_name)
+        
+        # Маппинг на стандартные имена для отображения
+        display_mapping = {
+            "map50": "mAP50",
+            "map50-95": "mAP50-95",
+            "precision": "Precision",
+            "recall": "Recall",
+            "f1_score": "F1-Score",
+            "f1": "F1-Score",
+            "fitness": "Fitness",
+        }
+        
+        # Если нашли в маппинге, используем красивое имя
+        display_name = display_mapping.get(normalized)
+        if display_name:
+            return display_name
+        
+        # Иначе возвращаем оригинальное имя с заглавной буквы
+        return metric_name.capitalize() if metric_name else metric_name
+    
     def _get_metric_description(self, metric_name):
         """Возвращает описание метрики"""
+        # Нормализуем имя метрики
+        normalized = self._normalize_metric_name_for_description(metric_name)
+        
         descriptions = {
+            "map50": "Mean Average Precision при IoU=0.5",
             "mAP50": "Mean Average Precision при IoU=0.5",
+            "map50-95": "Mean Average Precision при IoU=0.5-0.95",
             "mAP50-95": "Mean Average Precision при IoU=0.5-0.95",
-            "precision": "Точность детекции",
-            "recall": "Полнота детекции",
+            "map": "Mean Average Precision при IoU=0.5-0.95",
+            "precision": "Точность детекции (доля правильных детекций среди всех)",
+            "recall": "Полнота детекции (доля найденных объектов среди всех)",
             "f1_score": "F1-мера (гармоническое среднее точности и полноты)",
+            "f1": "F1-мера (гармоническое среднее точности и полноты)",
+            # Дополнительные метрики, которые могут прийти из results_dict
+            "fitness": "Fitness - комплексная метрика качества модели (взвешенная комбинация mAP50, precision, recall)",
+            "speed": "Скорость обработки (мс на изображение)",
+            "box_loss": "Loss для предсказания bounding box",
+            "cls_loss": "Loss для классификации",
+            "dfl_loss": "Distribution Focal Loss",
+            "loss": "Общий loss",
         }
-        return descriptions.get(metric_name, "Неизвестная метрика")
+        
+        # Пробуем найти по нормализованному имени (с учетом регистра)
+        result = descriptions.get(normalized)
+        if result:
+            return result
+        
+        # Пробуем найти по оригинальному имени
+        result = descriptions.get(metric_name)
+        if result:
+            return result
+        
+        # Если не нашли, возвращаем более информативное сообщение
+        return f"Метрика: {metric_name}"
