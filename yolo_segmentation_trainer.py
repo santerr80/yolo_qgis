@@ -392,7 +392,26 @@ class SegmentationTrainer:
             if status_callback:
                 status_callback("Начало обучения...")
 
-            # Создаем callback для остановки тренировки
+            # Создаем callback для остановки тренировки (проверка в конце каждого батча для быстрой реакции)
+            def on_train_batch_end(trainer):
+                """Callback вызывается в конце каждого батча для проверки остановки"""
+                try:
+                    if self.should_stop:
+                        # Останавливаем обучение через различные способы
+                        # В Ultralytics YOLO используется trainer.stop для остановки
+                        if hasattr(trainer, 'stop'):
+                            trainer.stop = True
+                        # Альтернативный способ через модель
+                        if hasattr(trainer, 'model') and hasattr(trainer.model, 'stop'):
+                            trainer.model.stop = True
+                        # Еще один способ - через атрибут training
+                        if hasattr(trainer, 'training'):
+                            trainer.training = False
+                        logger.info("Остановка тренировки запрошена пользователем (обнаружена в конце батча)")
+                except Exception as e:
+                    logger.error(f"Ошибка в callback остановки (batch): {e}", exc_info=False)
+
+            # Создаем callback для остановки тренировки (проверка в конце каждой эпохи)
             def on_train_epoch_end(trainer):
                 """Callback вызывается в конце каждой эпохи обучения для проверки остановки"""
                 try:
@@ -411,13 +430,17 @@ class SegmentationTrainer:
                 except Exception as e:
                     logger.error(f"Ошибка в callback остановки: {e}", exc_info=False)
 
-            # Регистрируем callback остановки
+            # Регистрируем callbacks остановки
             try:
+                # Регистрируем callback для проверки в конце каждого батча (быстрая реакция)
+                self.current_model.add_callback('on_train_batch_end', on_train_batch_end)
+                # Регистрируем callback для проверки в конце каждой эпохи (резервный)
                 self.current_model.add_callback('on_train_epoch_end', on_train_epoch_end)
             except AttributeError:
                 # Если метод add_callback не существует, пробуем через параметр callbacks
                 if "callbacks" not in train_args:
                     train_args["callbacks"] = {}
+                train_args["callbacks"]["on_train_batch_end"] = on_train_batch_end
                 train_args["callbacks"]["on_train_epoch_end"] = on_train_epoch_end
 
             # Создаем кастомный callback для обновления прогресса

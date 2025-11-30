@@ -26,14 +26,85 @@
 # Fix for NumPy stderr issue in QGIS environment
 # This ensures sys.stderr is properly initialized before any NumPy operations
 import sys
+import logging
+import io
 
 if not hasattr(sys, "stderr") or sys.stderr is None:
     try:
         sys.stderr = sys.__stderr__
     except AttributeError:
-        import io
-
         sys.stderr = io.TextIOWrapper(io.BytesIO())
+
+
+# Fix for logging errors in QGIS environment
+# Create a safe logging handler that catches write errors
+class SafeStreamHandler(logging.StreamHandler):
+    """A stream handler that safely handles write errors in QGIS environment"""
+    
+    def __init__(self, stream=None):
+        """Initialize handler with safe stream"""
+        # Use a safe fallback stream if provided stream is None
+        if stream is None:
+            stream = io.TextIOWrapper(io.BytesIO())
+        super().__init__(stream)
+    
+    def emit(self, record):
+        """Emit a record, catching any write errors"""
+        try:
+            # Check if stream is available and has write method
+            if self.stream is None or not hasattr(self.stream, 'write'):
+                return
+            
+            # Try to write the record
+            super().emit(record)
+        except (OSError, ValueError, AttributeError, TypeError):
+            # Silently ignore logging errors (stream not available, encoding issues, etc.)
+            pass
+        except Exception:
+            # Catch all other exceptions to prevent logging errors from breaking the plugin
+            pass
+
+
+# Configure root logger with safe handler
+def _setup_safe_logging():
+    """Setup safe logging configuration for QGIS environment"""
+    root_logger = logging.getLogger()
+    
+    # Remove existing handlers that might cause issues
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.StreamHandler):
+            try:
+                root_logger.removeHandler(handler)
+            except Exception:
+                pass
+    
+    # Create a safe stream for logging
+    try:
+        # Try to use sys.stderr if available
+        safe_stream = sys.stderr if (sys.stderr is not None and hasattr(sys.stderr, 'write')) else None
+    except Exception:
+        safe_stream = None
+    
+    # Add safe handler with fallback to NullHandler if stream is not available
+    if safe_stream is not None:
+        try:
+            safe_handler = SafeStreamHandler(safe_stream)
+            safe_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            ))
+            root_logger.addHandler(safe_handler)
+        except Exception:
+            # If handler creation fails, use NullHandler
+            root_logger.addHandler(logging.NullHandler())
+    else:
+        # Use NullHandler if no stream is available
+        root_logger.addHandler(logging.NullHandler())
+    
+    root_logger.setLevel(logging.WARNING)
+
+
+# Setup safe logging when module is imported
+_setup_safe_logging()
 
 
 # noinspection PyPep8Naming

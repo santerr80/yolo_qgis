@@ -364,7 +364,7 @@ class YOLOTrainingManager(QObject):
 
     def cancel_training(self, experiment_id: str) -> bool:
         """
-        Отменяет обучение
+        Отменяет обучение безопасным способом
 
         :param experiment_id: ID эксперимента
         :return: True если успешно
@@ -372,17 +372,36 @@ class YOLOTrainingManager(QObject):
         try:
             if experiment_id in self.active_trainings:
                 thread = self.active_trainings[experiment_id]
+                
                 if thread.isRunning():
-                    thread.terminate()
-                    thread.wait()
+                    # Сначала пытаемся остановить обучение через тренер
+                    # Это безопасный способ, который позволяет PyTorch корректно завершить работу
+                    if hasattr(thread, 'trainer'):
+                        trainer = thread.trainer
+                        if hasattr(trainer, "cancel_training"):
+                            trainer.cancel_training()
+                    
+                    # Также отменяем в обоих тренерах на всякий случай
+                    if hasattr(self.detection_trainer, "cancel_training"):
+                        self.detection_trainer.cancel_training()
+                    if hasattr(self.segmentation_trainer, "cancel_training"):
+                        self.segmentation_trainer.cancel_training()
+                    
+                    # Ждем корректного завершения потока с таймаутом
+                    # Это позволяет PyTorch потокам завершиться безопасно
+                    if not thread.wait(5000):  # Ждем до 5 секунд
+                        # Если поток не завершился, логируем предупреждение
+                        # НЕ используем terminate(), так как это вызывает access violation
+                        logger.warning(
+                            f"Поток обучения {experiment_id} не завершился в течение 5 секунд. "
+                            "Ожидание завершения..."
+                        )
+                        # Продолжаем ждать, но уже без таймаута
+                        # Поток должен завершиться после установки should_stop
+                        thread.wait(30000)  # Дополнительные 30 секунд
+                
+                # Удаляем из активных тренировок
                 del self.active_trainings[experiment_id]
-
-                # Отменяем в тренере
-                if hasattr(self.detection_trainer, "cancel_training"):
-                    self.detection_trainer.cancel_training()
-                if hasattr(self.segmentation_trainer, "cancel_training"):
-                    self.segmentation_trainer.cancel_training()
-
                 return True
             return False
         except Exception as e:
