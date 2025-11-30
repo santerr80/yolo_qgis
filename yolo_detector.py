@@ -21,6 +21,7 @@ from qgis.core import (
     QgsProject,
     QgsRasterLayer,
     QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
     QgsMapSettings,
     QgsMapRendererParallelJob,
 )
@@ -178,11 +179,13 @@ class YOLODetector:
                     progress_callback("Обработка результатов...")
 
                 # Вычисляем размеры изображения для преобразования координат
+                # Используем exported_extent, который уже в CRS растрового слоя
                 if extent:
                     # Если используется ограниченный экстент, вычисляем размеры на основе соотношения
                     full_extent = raster_layer.extent()
-                    width_ratio = (extent.width() / full_extent.width()) * raster_layer.width()
-                    height_ratio = (extent.height() / full_extent.height()) * raster_layer.height()
+                    # Используем exported_extent, который уже преобразован в CRS растрового слоя
+                    width_ratio = (exported_extent.width() / full_extent.width()) * raster_layer.width()
+                    height_ratio = (exported_extent.height() / full_extent.height()) * raster_layer.height()
                     img_width = int(width_ratio)
                     img_height = int(height_ratio)
                 else:
@@ -275,9 +278,37 @@ class YOLODetector:
         """
         try:
             # Получаем экстент и CRS
+            # Примечание: extent передается в CRS проекта, преобразуем в CRS растрового слоя
             if extent is None:
                 extent = raster_layer.extent()
+            else:
+                # Преобразуем extent из CRS проекта в CRS растрового слоя
+                project = QgsProject.instance()
+                project_crs = project.crs()
+                raster_crs = raster_layer.crs()
+                
+                if project_crs.isValid() and raster_crs.isValid() and project_crs != raster_crs:
+                    try:
+                        transform = QgsCoordinateTransform(
+                            project_crs, raster_crs, QgsProject.instance()
+                        )
+                        extent = transform.transformBoundingBox(extent)
+                        logger.debug(
+                            f"Экстент преобразован из CRS проекта {project_crs.authid()} "
+                            f"в CRS растрового слоя {raster_crs.authid()}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Ошибка преобразования CRS экстента из проекта в CRS растра: {e}. "
+                            f"Используется экстент без преобразования."
+                        )
+            
             crs = raster_layer.crs()
+            
+            # Проверяем, что extent валиден (не пустой)
+            if extent is None or extent.isEmpty():
+                logger.error("Переданный экстент недействителен или пуст")
+                return None, None, None
 
             # Вычисляем размеры изображения на основе экстента
             full_extent = raster_layer.extent()

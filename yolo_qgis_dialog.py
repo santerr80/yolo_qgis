@@ -16,7 +16,13 @@ from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets, QtGui
 from qgis.PyQt.QtCore import Qt
 
-from qgis.core import QgsMapLayerProxyModel, QgsProject
+from qgis.core import (
+    QgsMapLayerProxyModel,
+    QgsProject,
+    QgsCoordinateTransform,
+    QgsCoordinateReferenceSystem,
+    QgsRectangle,
+)
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -52,9 +58,14 @@ FORM_CLASS, _ = uic.loadUiType(
 
 class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
     # ... (весь код __init__, _setup_connections, _update_size_values, update_split_values остается без изменений) ...
-    def __init__(self, parent=None):
-        """Конструктор."""
+    def __init__(self, parent=None, iface=None):
+        """Конструктор.
+        
+        :param parent: Родительский виджет
+        :param iface: QGIS interface для доступа к map canvas
+        """
         super(YoloQgisDialog, self).__init__(parent)
+        self.iface = iface
 
         self.setupUi(self)
 
@@ -775,14 +786,56 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
 
             # Настраиваем виджет экстента
             if hasattr(self, "mExtentGroupBoxDetection"):
-                # Устанавливаем исходный CRS из проекта
+                # Устанавливаем map canvas для доступа к "Map canvas extent"
+                if self.iface and hasattr(self.iface, "mapCanvas"):
+                    map_canvas = self.iface.mapCanvas()
+                    if map_canvas:
+                        self.mExtentGroupBoxDetection.setMapCanvas(map_canvas)
+                
+                # Устанавливаем текущий слой для доступа к "Current layer extent"
+                if self.iface and hasattr(self.iface, "activeLayer"):
+                    current_layer = self.iface.activeLayer()
+                    if current_layer and current_layer.isValid():
+                        # Устанавливаем текущий слой для виджета extent
+                        # QgsExtentGroupBox автоматически использует его для "Current layer extent"
+                        try:
+                            # Метод setCurrentLayer может быть доступен в некоторых версиях QGIS
+                            if hasattr(self.mExtentGroupBoxDetection, "setCurrentLayer"):
+                                self.mExtentGroupBoxDetection.setCurrentLayer(current_layer)
+                        except AttributeError:
+                            # Если метод недоступен, виджет будет использовать iface.activeLayer() автоматически
+                            pass
+                
+                # Подключаем сигнал изменения активного слоя для обновления extent
+                if self.iface:
+                    try:
+                        # Подключаемся к сигналу изменения активного слоя через QgsProject
+                        QgsProject.instance().layersAdded.connect(self._update_extent_for_current_layer)
+                        # Также можно использовать iface.currentLayerChanged если доступен
+                        if hasattr(self.iface, "currentLayerChanged"):
+                            self.iface.currentLayerChanged.connect(self._update_extent_for_current_layer)
+                    except Exception as e:
+                        logger.debug(f"Не удалось подключить сигналы для обновления extent: {e}")
+                
+                # Устанавливаем CRS проекта как выходной CRS для виджета
+                # Это гарантирует, что все координаты extent будут в CRS проекта
                 project = QgsProject.instance()
-                if project.crs().isValid():
+                project_crs = project.crs()
+                if project_crs.isValid():
+                    # Устанавливаем output CRS в CRS проекта
+                    # Все extent будут возвращаться в CRS проекта
+                    try:
+                        if hasattr(self.mExtentGroupBoxDetection, "setOutputCrs"):
+                            self.mExtentGroupBoxDetection.setOutputCrs(project_crs)
+                    except Exception as e:
+                        logger.debug(f"Не удалось установить output CRS: {e}")
+                    
+                    # Устанавливаем исходный extent в CRS проекта
                     self.mExtentGroupBoxDetection.setOriginalExtent(
-                        project.crs().bounds(), project.crs()
+                        project_crs.bounds(), project_crs
                     )
                     self.mExtentGroupBoxDetection.setCurrentExtent(
-                        project.crs().bounds(), project.crs()
+                        project_crs.bounds(), project_crs
                     )
 
             # Безопасное подключение кнопки детекции
@@ -799,12 +852,79 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 # Обновляем экстент виджета на основе выбранного растра
                 if layer.isValid():
                     extent = layer.extent()
-                    crs = layer.crs()
-                    if extent.isValid() and crs.isValid():
-                        self.mExtentGroupBoxDetection.setOriginalExtent(extent, crs)
-                        self.mExtentGroupBoxDetection.setCurrentExtent(extent, crs)
+                    layer_crs = layer.crs()
+                    project = QgsProject.instance()
+                    project_crs = project.crs()
+                    
+                    if extent and not extent.isEmpty() and layer_crs.isValid() and project_crs.isValid():
+                        # Преобразуем extent из CRS слоя в CRS проекта
+                        if layer_crs != project_crs:
+                            try:
+                                transform = QgsCoordinateTransform(
+                                    layer_crs, project_crs, QgsProject.instance()
+                                )
+                                extent = transform.transformBoundingBox(extent)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Ошибка преобразования extent растра в CRS проекта: {e}. "
+                                    f"Используется extent в CRS слоя."
+                                )
+                                # Используем extent в CRS слоя, если преобразование не удалось
+                                self.mExtentGroupBoxDetection.setOriginalExtent(extent, layer_crs)
+                                self.mExtentGroupBoxDetection.setCurrentExtent(extent, layer_crs)
+                                return
+                        
+                        # Устанавливаем extent в CRS проекта
+                        self.mExtentGroupBoxDetection.setOriginalExtent(extent, project_crs)
+                        self.mExtentGroupBoxDetection.setCurrentExtent(extent, project_crs)
         except Exception as e:
             logger.warning(f"Ошибка обновления экстента: {e}", exc_info=True)
+
+    def _update_extent_for_current_layer(self, layer=None):
+        """Обновляет extent виджета при изменении текущего активного слоя"""
+        try:
+            if not hasattr(self, "mExtentGroupBoxDetection"):
+                return
+            
+            # Получаем текущий активный слой
+            if layer is None and self.iface:
+                layer = self.iface.activeLayer()
+            
+            if layer and layer.isValid():
+                extent = layer.extent()
+                layer_crs = layer.crs()
+                project = QgsProject.instance()
+                project_crs = project.crs()
+                
+                if extent and not extent.isEmpty() and layer_crs.isValid() and project_crs.isValid():
+                    # Преобразуем extent из CRS слоя в CRS проекта
+                    if layer_crs != project_crs:
+                        try:
+                            transform = QgsCoordinateTransform(
+                                layer_crs, project_crs, QgsProject.instance()
+                            )
+                            extent = transform.transformBoundingBox(extent)
+                        except Exception as e:
+                            logger.debug(
+                                f"Ошибка преобразования extent текущего слоя в CRS проекта: {e}"
+                            )
+                            # Если преобразование не удалось, используем extent в CRS слоя
+                            extent_crs = layer_crs
+                        else:
+                            extent_crs = project_crs
+                    else:
+                        extent_crs = project_crs
+                    
+                    # Обновляем extent для опции "Current layer extent"
+                    # QgsExtentGroupBox автоматически использует это при выборе "Calculate from layer"
+                    try:
+                        if hasattr(self.mExtentGroupBoxDetection, "setCurrentLayer"):
+                            self.mExtentGroupBoxDetection.setCurrentLayer(layer)
+                    except Exception:
+                        # Если метод недоступен, виджет будет использовать iface.activeLayer() автоматически
+                        pass
+        except Exception as e:
+            logger.debug(f"Ошибка обновления extent для текущего слоя: {e}")
 
     def _on_task_type_changed(self, task_type):
         """Обработчик изменения типа задачи"""
@@ -2349,14 +2469,54 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 detection_extent = None
                 if hasattr(self, "mExtentGroupBoxDetection"):
                     extent_groupbox = self.mExtentGroupBoxDetection
-                    if extent_groupbox.isValid():
+                    try:
                         detection_extent = extent_groupbox.outputExtent()
-                        if detection_extent and detection_extent.isValid():
+                        extent_crs = extent_groupbox.outputCrs()
+                        project = QgsProject.instance()
+                        project_crs = project.crs()
+                        
+                        if detection_extent and not detection_extent.isEmpty():
+                            # Проверяем и преобразуем extent в CRS проекта, если необходимо
+                            # (outputCrs должен быть установлен в CRS проекта, но проверяем для надежности)
+                            if extent_crs.isValid() and project_crs.isValid():
+                                if extent_crs != project_crs:
+                                    # Если CRS отличается, преобразуем в CRS проекта
+                                    try:
+                                        transform = QgsCoordinateTransform(
+                                            extent_crs, project_crs, QgsProject.instance()
+                                        )
+                                        detection_extent = transform.transformBoundingBox(detection_extent)
+                                        self.textEditDetectionLog.append(
+                                            f"Экстент преобразован из CRS {extent_crs.authid()} "
+                                            f"в CRS проекта {project_crs.authid()}"
+                                        )
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Ошибка преобразования CRS экстента: {e}. "
+                                            f"Используется экстент без преобразования."
+                                        )
+                                else:
+                                    # Extent уже в CRS проекта
+                                    self.textEditDetectionLog.append(
+                                        f"Экстент в CRS проекта {project_crs.authid()}"
+                                    )
+                            else:
+                                # Если CRS не определен, логируем предупреждение
+                                logger.warning(
+                                    f"CRS extent или проекта не определен. "
+                                    f"Extent CRS: {extent_crs.authid() if extent_crs.isValid() else 'не определен'}, "
+                                    f"Project CRS: {project_crs.authid() if project_crs.isValid() else 'не определен'}"
+                                )
+                            
                             self.textEditDetectionLog.append(
-                                f"Используется ограниченный экстент: "
+                                f"Используется ограниченный экстент (CRS проекта): "
                                 f"X: {detection_extent.xMinimum():.2f} - {detection_extent.xMaximum():.2f}, "
                                 f"Y: {detection_extent.yMinimum():.2f} - {detection_extent.yMaximum():.2f}"
                             )
+                    except Exception as e:
+                        # Если не удалось получить extent из виджета, просто не используем ограничение
+                        logger.debug(f"Не удалось получить extent из виджета: {e}")
+                        detection_extent = None
 
                 # Детекция на растровом слое
                 self.textEditDetectionLog.append(
