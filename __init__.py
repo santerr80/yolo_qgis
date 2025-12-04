@@ -28,6 +28,7 @@
 import sys
 import logging
 import io
+from pathlib import Path
 
 if not hasattr(sys, "stderr") or sys.stderr is None:
     try:
@@ -78,7 +79,33 @@ def _setup_safe_logging():
             except Exception:
                 pass
     
-    # Create a safe stream for logging
+    # Формат для логов
+    log_format = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # 1. Добавляем файловый handler для сохранения логов в файл
+    try:
+        # Определяем путь к директории плагина
+        plugin_dir = Path(__file__).parent
+        log_file_path = plugin_dir / "yolo_qgis.log"
+        
+        # Создаем файловый handler с ротацией (максимум 5 МБ, 3 файла)
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(
+            log_file_path,
+            maxBytes=5*1024*1024,  # 5 МБ
+            backupCount=3,
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(log_format)
+        file_handler.setLevel(logging.DEBUG)  # В файл пишем все уровни
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        # Если не удалось создать файловый handler, продолжаем без него
+        pass
+    
+    # 2. Добавляем handler для вывода в консоль (stderr)
     try:
         # Try to use sys.stderr if available
         safe_stream = sys.stderr if (sys.stderr is not None and hasattr(sys.stderr, 'write')) else None
@@ -89,18 +116,18 @@ def _setup_safe_logging():
     if safe_stream is not None:
         try:
             safe_handler = SafeStreamHandler(safe_stream)
-            safe_handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            ))
+            safe_handler.setFormatter(log_format)
+            safe_handler.setLevel(logging.WARNING)  # В консоль только WARNING и выше
             root_logger.addHandler(safe_handler)
         except Exception:
             # If handler creation fails, use NullHandler
-            root_logger.addHandler(logging.NullHandler())
+            pass
     else:
         # Use NullHandler if no stream is available
-        root_logger.addHandler(logging.NullHandler())
+        pass
     
-    root_logger.setLevel(logging.WARNING)
+    # Устанавливаем уровень логирования для root logger
+    root_logger.setLevel(logging.DEBUG)  # Разрешаем все уровни, фильтрация на уровне handlers
 
 
 # Setup safe logging when module is imported

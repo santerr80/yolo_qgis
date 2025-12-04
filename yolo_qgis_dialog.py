@@ -830,10 +830,6 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     except Exception as e:
                         logger.debug(f"Не удалось установить output CRS: {e}")
                     
-                    # Устанавливаем исходный extent в CRS проекта
-                    self.mExtentGroupBoxDetection.setOriginalExtent(
-                        project_crs.bounds(), project_crs
-                    )
                     self.mExtentGroupBoxDetection.setCurrentExtent(
                         project_crs.bounds(), project_crs
                     )
