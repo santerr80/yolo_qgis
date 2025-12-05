@@ -250,6 +250,9 @@ class DetectionTrainer:
         mixup: float = 0.0,
         copy_paste: float = 0.3,
         fliplr: float = 0.5,
+        scale: float = 0.5,
+        translate: float = 0.1,
+        cutmix: float = 0.0,
         exist_ok: bool = False,
         resume: bool = False,
         progress_callback=None,
@@ -272,6 +275,9 @@ class DetectionTrainer:
         :param mixup: Вероятность mixup
         :param copy_paste: Вероятность copy-paste
         :param fliplr: Вероятность горизонтального отражения
+        :param scale: Вероятность масштабирования
+        :param translate: Вероятность смещения
+        :param cutmix: Вероятность cutmix
         :param exist_ok: Если True, YOLO будет перезаписывать результаты в существующей директории (без добавления run2, run3 и т.п.)
         :param resume: Если True, обучение будет продолжено с последнего чекпоинта
         :param progress_callback: Callback для прогресса
@@ -292,6 +298,49 @@ class DetectionTrainer:
             if device != "cpu":
                 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
+            # Настраиваем логирование ultralytics перед импортом
+            # Это перенаправляет логи ultralytics в QGIS MessageLog
+            try:
+                import logging
+                from qgis.core import QgsMessageLog, Qgis
+                
+                # Создаем QGIS handler для ultralytics
+                class QGISLogHandler(logging.Handler):
+                    def emit(self, record):
+                        try:
+                            msg = self.format(record)
+                            if record.levelno >= logging.ERROR:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Critical)
+                            elif record.levelno >= logging.WARNING:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Warning)
+                            else:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Info)
+                        except Exception:
+                            pass
+                
+                # Настраиваем логгеры ultralytics
+                for logger_name in ['ultralytics', 'ultralytics.engine', 
+                                   'ultralytics.engine.trainer', 'ultralytics.engine.validator',
+                                   'ultralytics.engine.model', 'ultralytics.utils']:
+                    ultralytics_logger = logging.getLogger(logger_name)
+                    # Удаляем проблемные handlers
+                    for handler in list(ultralytics_logger.handlers):
+                        if isinstance(handler, logging.StreamHandler):
+                            try:
+                                if handler.stream is None or not hasattr(handler.stream, 'write'):
+                                    ultralytics_logger.removeHandler(handler)
+                            except Exception:
+                                pass
+                    # Добавляем QGIS handler
+                    qgis_handler = QGISLogHandler()
+                    qgis_handler.setFormatter(logging.Formatter('%(message)s'))
+                    ultralytics_logger.addHandler(qgis_handler)
+                    ultralytics_logger.setLevel(logging.INFO)
+                    ultralytics_logger.propagate = False
+            except Exception:
+                # Если не удалось настроить, продолжаем работу
+                pass
+            
             # Проверяем наличие ultralytics
             try:
                 from ultralytics import YOLO
@@ -345,6 +394,9 @@ class DetectionTrainer:
                 "copy_paste": copy_paste,
                 "flipud": 0.0,  # Вертикальное отражение отключено по умолчанию
                 "fliplr": fliplr,
+                "scale": scale,
+                "translate": translate,
+                "cutmix": cutmix,
                 "workers": 0,  # Отключаем multiprocessing для совместимости с QGIS
             }
 
@@ -365,6 +417,9 @@ class DetectionTrainer:
                         "mixup": mixup,
                         "copy_paste": copy_paste,
                         "fliplr": fliplr,
+                        "scale": scale,
+                        "translate": translate,
+                        "cutmix": cutmix,
                     },
                 }
                 self.metrics_tracker.start_experiment(

@@ -52,6 +52,49 @@ class YOLODetector:
             if not os.path.exists(model_path):
                 return {"error": f"Файл модели не найден: {model_path}"}
 
+            # Настраиваем логирование ultralytics перед импортом
+            # Это перенаправляет логи ultralytics в QGIS MessageLog
+            try:
+                import logging
+                from qgis.core import QgsMessageLog, Qgis
+                
+                # Создаем QGIS handler для ultralytics
+                class QGISLogHandler(logging.Handler):
+                    def emit(self, record):
+                        try:
+                            msg = self.format(record)
+                            if record.levelno >= logging.ERROR:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Critical)
+                            elif record.levelno >= logging.WARNING:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Warning)
+                            else:
+                                QgsMessageLog.logMessage(msg, 'YOLO QGIS', Qgis.Info)
+                        except Exception:
+                            pass
+                
+                # Настраиваем логгеры ultralytics
+                for logger_name in ['ultralytics', 'ultralytics.engine', 
+                                   'ultralytics.engine.trainer', 'ultralytics.engine.validator',
+                                   'ultralytics.engine.model', 'ultralytics.utils']:
+                    ultralytics_logger = logging.getLogger(logger_name)
+                    # Удаляем проблемные handlers
+                    for handler in list(ultralytics_logger.handlers):
+                        if isinstance(handler, logging.StreamHandler):
+                            try:
+                                if handler.stream is None or not hasattr(handler.stream, 'write'):
+                                    ultralytics_logger.removeHandler(handler)
+                            except Exception:
+                                pass
+                    # Добавляем QGIS handler
+                    qgis_handler = QGISLogHandler()
+                    qgis_handler.setFormatter(logging.Formatter('%(message)s'))
+                    ultralytics_logger.addHandler(qgis_handler)
+                    ultralytics_logger.setLevel(logging.INFO)
+                    ultralytics_logger.propagate = False
+            except Exception:
+                # Если не удалось настроить, продолжаем работу
+                pass
+            
             # Проверяем наличие ultralytics
             try:
                 from ultralytics import YOLO

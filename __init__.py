@@ -28,7 +28,6 @@
 import sys
 import logging
 import io
-from pathlib import Path
 
 if not hasattr(sys, "stderr") or sys.stderr is None:
     try:
@@ -66,6 +65,136 @@ class SafeStreamHandler(logging.StreamHandler):
             pass
 
 
+# QGIS Logging Handler for redirecting ultralytics logs to QGIS MessageLog
+class QGISLogHandler(logging.Handler):
+    """Handler that redirects logs to QGIS MessageLog"""
+    
+    def emit(self, record):
+        """Emit a record to QGIS MessageLog"""
+        try:
+            # Try to import QGIS logging API
+            from qgis.core import QgsMessageLog, Qgis
+            
+            # Format the message
+            msg = self.format(record)
+            
+            # Map Python logging levels to QGIS message levels
+            if record.levelno >= logging.CRITICAL:
+                qgis_level = Qgis.Critical
+            elif record.levelno >= logging.ERROR:
+                qgis_level = Qgis.Critical
+            elif record.levelno >= logging.WARNING:
+                qgis_level = Qgis.Warning
+            elif record.levelno >= logging.INFO:
+                qgis_level = Qgis.Info
+            else:  # DEBUG
+                qgis_level = Qgis.Info
+            
+            # Log to QGIS MessageLog
+            QgsMessageLog.logMessage(msg, 'YOLO QGIS', qgis_level)
+        except ImportError:
+            # QGIS API not available, silently ignore
+            pass
+        except Exception:
+            # Catch all exceptions to prevent logging errors from breaking the plugin
+            pass
+
+
+def _setup_ultralytics_logging():
+    """Setup ultralytics logging to redirect to QGIS MessageLog"""
+    try:
+        # Create QGIS handler (shared instance)
+        qgis_handler = QGISLogHandler()
+        qgis_handler.setFormatter(logging.Formatter('%(message)s'))
+        qgis_handler.setLevel(logging.INFO)  # Only log INFO and above to avoid spam
+        
+        def _configure_logger(logger_name):
+            """Helper function to configure a logger"""
+            logger_obj = logging.getLogger(logger_name)
+            
+            # Remove any existing problematic handlers
+            handlers_to_remove = []
+            for handler in logger_obj.handlers:
+                try:
+                    # Check if handler has a stream that is None or invalid
+                    if isinstance(handler, logging.StreamHandler):
+                        if handler.stream is None or not hasattr(handler.stream, 'write'):
+                            handlers_to_remove.append(handler)
+                        # Also remove if it's not our QGIS handler
+                        elif not isinstance(handler, QGISLogHandler):
+                            handlers_to_remove.append(handler)
+                except Exception:
+                    # If we can't check, try to remove anyway if it's not QGIS handler
+                    try:
+                        if not isinstance(handler, QGISLogHandler):
+                            handlers_to_remove.append(handler)
+                    except Exception:
+                        pass
+            
+            # Remove problematic handlers
+            for handler in handlers_to_remove:
+                try:
+                    logger_obj.removeHandler(handler)
+                except Exception:
+                    pass
+            
+            # Add QGIS handler if not already present
+            has_qgis_handler = any(isinstance(h, QGISLogHandler) for h in logger_obj.handlers)
+            if not has_qgis_handler:
+                logger_obj.addHandler(qgis_handler)
+            
+            # Set level to INFO to reduce verbosity
+            logger_obj.setLevel(logging.INFO)
+            # Prevent propagation to root logger to avoid duplicate messages
+            logger_obj.propagate = False
+        
+        # Configure main ultralytics logger
+        _configure_logger('ultralytics')
+        
+        # Configure child loggers (ultralytics.engine, etc.)
+        for logger_name in ['ultralytics.engine', 'ultralytics.engine.trainer', 
+                           'ultralytics.engine.validator', 'ultralytics.utils',
+                           'ultralytics.engine.model']:
+            _configure_logger(logger_name)
+        
+        # Also set up a mechanism to catch handlers added later
+        # We'll override addHandler for ultralytics loggers
+        original_add_handler = logging.Logger.addHandler
+        
+        def safe_add_handler(self, handler):
+            """Wrapper to prevent adding problematic handlers"""
+            # Check if this is an ultralytics logger
+            if self.name.startswith('ultralytics'):
+                # Don't add StreamHandlers with None stream
+                if isinstance(handler, logging.StreamHandler):
+                    try:
+                        if handler.stream is None or not hasattr(handler.stream, 'write'):
+                            return  # Skip adding this handler
+                    except Exception:
+                        pass
+                # Don't add duplicate QGIS handlers
+                if isinstance(handler, QGISLogHandler):
+                    if any(isinstance(h, QGISLogHandler) for h in self.handlers):
+                        return  # Already has QGIS handler
+            # Call original method
+            return original_add_handler(self, handler)
+        
+        # Replace addHandler method
+        logging.Logger.addHandler = safe_add_handler
+            
+    except Exception:
+        # Silently fail if ultralytics is not available or if there's any error
+        pass
+
+
+def setup_ultralytics_logging():
+    """
+    Public function to setup ultralytics logging.
+    Call this before importing ultralytics modules.
+    """
+    _setup_ultralytics_logging()
+
+
 # Configure root logger with safe handler
 def _setup_safe_logging():
     """Setup safe logging configuration for QGIS environment"""
@@ -79,33 +208,7 @@ def _setup_safe_logging():
             except Exception:
                 pass
     
-    # Формат для логов
-    log_format = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # 1. Добавляем файловый handler для сохранения логов в файл
-    try:
-        # Определяем путь к директории плагина
-        plugin_dir = Path(__file__).parent
-        log_file_path = plugin_dir / "yolo_qgis.log"
-        
-        # Создаем файловый handler с ротацией (максимум 5 МБ, 3 файла)
-        from logging.handlers import RotatingFileHandler
-        file_handler = RotatingFileHandler(
-            log_file_path,
-            maxBytes=5*1024*1024,  # 5 МБ
-            backupCount=3,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(log_format)
-        file_handler.setLevel(logging.DEBUG)  # В файл пишем все уровни
-        root_logger.addHandler(file_handler)
-    except Exception as e:
-        # Если не удалось создать файловый handler, продолжаем без него
-        pass
-    
-    # 2. Добавляем handler для вывода в консоль (stderr)
+    # Create a safe stream for logging
     try:
         # Try to use sys.stderr if available
         safe_stream = sys.stderr if (sys.stderr is not None and hasattr(sys.stderr, 'write')) else None
@@ -116,18 +219,18 @@ def _setup_safe_logging():
     if safe_stream is not None:
         try:
             safe_handler = SafeStreamHandler(safe_stream)
-            safe_handler.setFormatter(log_format)
-            safe_handler.setLevel(logging.WARNING)  # В консоль только WARNING и выше
+            safe_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            ))
             root_logger.addHandler(safe_handler)
         except Exception:
             # If handler creation fails, use NullHandler
-            pass
+            root_logger.addHandler(logging.NullHandler())
     else:
         # Use NullHandler if no stream is available
-        pass
+        root_logger.addHandler(logging.NullHandler())
     
-    # Устанавливаем уровень логирования для root logger
-    root_logger.setLevel(logging.DEBUG)  # Разрешаем все уровни, фильтрация на уровне handlers
+    root_logger.setLevel(logging.WARNING)
 
 
 # Setup safe logging when module is imported
@@ -141,7 +244,10 @@ def classFactory(iface):  # pylint: disable=invalid-name
     :param iface: A QGIS interface instance.
     :type iface: QgsInterface
     """
-    #
+    # Setup ultralytics logging to redirect to QGIS MessageLog
+    # This must be done before importing modules that use ultralytics
+    _setup_ultralytics_logging()
+    
     from .yolo_qgis import YoloQgis
 
     return YoloQgis(iface)

@@ -1008,6 +1008,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     "mixup": self.doubleSpinBoxMixup.value(),
                     "copy_paste": self.doubleSpinBoxCopyPaste.value(),
                     "fliplr": self.doubleSpinBoxFlipLR.value(),
+                    "scale": self.doubleSpinBoxScale.value(),
+                    "translate": self.doubleSpinBoxTranslate.value(),
+                    "cutmix": self.doubleSpinBoxCutmix.value(),
                 }
 
             # Выходные параметры
@@ -1347,6 +1350,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         "mixup": self.doubleSpinBoxMixup.value(),
                         "copy_paste": self.doubleSpinBoxCopyPaste.value(),
                         "fliplr": self.doubleSpinBoxFlipLR.value(),
+                        "scale": self.doubleSpinBoxScale.value(),
+                        "translate": self.doubleSpinBoxTranslate.value(),
+                        "cutmix": self.doubleSpinBoxCutmix.value(),
                     }
                     if self.groupBoxAugmentation.isChecked()
                     else {}
@@ -1385,6 +1391,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     self.doubleSpinBoxCopyPaste.setValue(aug["copy_paste"])
                 if "fliplr" in aug:
                     self.doubleSpinBoxFlipLR.setValue(aug["fliplr"])
+                if "scale" in aug:
+                    self.doubleSpinBoxScale.setValue(aug["scale"])
+                if "translate" in aug:
+                    self.doubleSpinBoxTranslate.setValue(aug["translate"])
+                if "cutmix" in aug:
+                    self.doubleSpinBoxCutmix.setValue(aug["cutmix"])
 
             # Применяем режим exist_ok (если чекбокс есть в UI)
             if hasattr(self, "checkBoxExistOk") and "exist_ok" in config:
