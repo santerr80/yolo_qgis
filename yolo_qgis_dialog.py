@@ -26,6 +26,7 @@ from qgis.core import (
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # --- ИМПОРТ ФУНКЦИЙ ИЗ ВНЕШНИХ МОДУЛЕЙ ---
 from .grid_creator import create_grid_layer
@@ -789,8 +790,12 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                 # Устанавливаем map canvas для доступа к "Map canvas extent"
                 if self.iface and hasattr(self.iface, "mapCanvas"):
                     map_canvas = self.iface.mapCanvas()
+                    logger.info(f"Map canvas: {map_canvas}")
                     if map_canvas:
+                        logger.info(f"Setting map canvas")
+                        logger.info(f"Map canvas extent: {map_canvas.extent().asWktCoordinates()}")
                         self.mExtentGroupBoxDetection.setMapCanvas(map_canvas)
+                        self.mExtentGroupBoxDetection.setCurrentExtent(map_canvas.extent(), map_canvas.crs())
                 
                 # Устанавливаем текущий слой для доступа к "Current layer extent"
                 if self.iface and hasattr(self.iface, "activeLayer"):

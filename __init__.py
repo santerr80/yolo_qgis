@@ -230,7 +230,7 @@ def _setup_safe_logging():
         # Use NullHandler if no stream is available
         root_logger.addHandler(logging.NullHandler())
     
-    root_logger.setLevel(logging.WARNING)
+    root_logger.setLevel(logging.INFO)
 
 
 # Setup safe logging when module is imported
