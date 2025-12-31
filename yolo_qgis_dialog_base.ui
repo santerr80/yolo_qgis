@@ -62,7 +62,7 @@
       </sizepolicy>
      </property>
      <property name="currentIndex">
-      <number>0</number>
+      <number>2</number>
      </property>
      <widget class="QWidget" name="Dataset">
       <attribute name="title">
@@ -1741,10 +1741,10 @@
           <string>Параметры детекции</string>
          </property>
          <layout class="QGridLayout" name="gridLayout_detection_params">
-          <item row="0" column="0">
-           <widget class="QLabel" name="labelDetectionConf">
+          <item row="4" column="0">
+           <widget class="QLabel" name="labelDetectionDevice">
             <property name="text">
-             <string>Порог уверенности:</string>
+             <string>Устройство:</string>
             </property>
            </widget>
           </item>
@@ -1764,13 +1764,6 @@
             </property>
            </widget>
           </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="labelDetectionIoU">
-            <property name="text">
-             <string>Порог IoU:</string>
-            </property>
-           </widget>
-          </item>
           <item row="1" column="1">
            <widget class="QDoubleSpinBox" name="doubleSpinBoxDetectionIoU">
             <property name="decimals">
@@ -1787,10 +1780,41 @@
             </property>
            </widget>
           </item>
+          <item row="4" column="1">
+           <widget class="QComboBox" name="comboBoxDetectionDevice">
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <item>
+             <property name="text">
+              <string>CPU</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>GPU (CUDA)</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="labelDetectionIoU">
+            <property name="text">
+             <string>Порог IoU:</string>
+            </property>
+           </widget>
+          </item>
           <item row="2" column="0">
            <widget class="QLabel" name="labelDetectionImageSize">
             <property name="text">
-             <string>Размер изображения:</string>
+             <string>Размер изображения, px:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="labelDetectionConf">
+            <property name="text">
+             <string>Порог уверенности:</string>
             </property>
            </widget>
           </item>
@@ -1814,22 +1838,64 @@
            </widget>
           </item>
           <item row="3" column="0">
-           <widget class="QLabel" name="labelDetectionDevice">
+           <widget class="QLabel" name="labelLabelResolution">
             <property name="text">
-             <string>Устройство:</string>
+             <string>Разрешение изображения, dpx:</string>
             </property>
            </widget>
           </item>
           <item row="3" column="1">
-           <widget class="QComboBox" name="comboBoxDetectionDevice">
+           <widget class="QComboBox" name="comboBoxImageResolution">
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <property name="currentText">
+             <string>256</string>
+            </property>
+            <property name="currentIndex">
+             <number>4</number>
+            </property>
             <item>
              <property name="text">
-              <string>CPU</string>
+              <string>16</string>
              </property>
             </item>
             <item>
              <property name="text">
-              <string>GPU (CUDA)</string>
+              <string>32</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>64</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>128</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>256</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>512</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>1024</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>2048</string>
              </property>
             </item>
            </widget>
@@ -1887,6 +1953,9 @@
          </item>
          <item>
           <widget class="QPushButton" name="pushButtonStartDetection">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
            <property name="text">
             <string>Запустить детекцию</string>
            </property>

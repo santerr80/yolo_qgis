@@ -795,7 +795,23 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                         logger.info(f"Setting map canvas")
                         logger.info(f"Map canvas extent: {map_canvas.extent().asWktCoordinates()}")
                         self.mExtentGroupBoxDetection.setMapCanvas(map_canvas)
-                        self.mExtentGroupBoxDetection.setCurrentExtent(map_canvas.extent(), map_canvas.crs())
+                        # Получаем CRS из map settings, так как QgsMapCanvas не имеет метода crs()
+                        try:
+                            map_crs = map_canvas.mapSettings().destinationCrs()
+                            if map_crs.isValid():
+                                self.mExtentGroupBoxDetection.setCurrentExtent(map_canvas.extent(), map_crs)
+                            else:
+                                # Если CRS не валиден, используем CRS проекта
+                                project = QgsProject.instance()
+                                project_crs = project.crs()
+                                if project_crs.isValid():
+                                    self.mExtentGroupBoxDetection.setCurrentExtent(map_canvas.extent(), project_crs)
+                        except AttributeError:
+                            # Fallback: используем CRS проекта если mapSettings недоступен
+                            project = QgsProject.instance()
+                            project_crs = project.crs()
+                            if project_crs.isValid():
+                                self.mExtentGroupBoxDetection.setCurrentExtent(map_canvas.extent(), project_crs)
                 
                 # Устанавливаем текущий слой для доступа к "Current layer extent"
                 if self.iface and hasattr(self.iface, "activeLayer"):
