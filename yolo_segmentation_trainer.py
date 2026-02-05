@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Модуль для обучения моделей YOLO сегментации объектов
-Поддерживает YOLOv8-seg и YOLOv11-seg
+Поддерживает YOLOv8-seg, YOLOv11-seg и YOLO26-seg
 """
 
 import os
@@ -272,7 +272,7 @@ class SegmentationTrainer:
         Запускает обучение модели сегментации
 
         :param dataset_path: Путь к датасету
-        :param model_type: Тип модели (yolov8n-seg, yolov8s-seg, yolov11n-seg и т.д.)
+        :param model_type: Тип модели (yolov8n-seg, yolov8s-seg, yolo11n-seg, yolo26n-seg и т.д.)
         :param epochs: Количество эпох
         :param batch_size: Размер батча
         :param image_size: Размер изображения

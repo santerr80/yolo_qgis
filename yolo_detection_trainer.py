@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Модуль для обучения моделей YOLO детекции объектов
-Поддерживает YOLOv8 и YOLOv11
+Поддерживает YOLOv8, YOLOv11 и YOLO26
 """
 
 import os
@@ -262,7 +262,7 @@ class DetectionTrainer:
         Запускает обучение модели детекции
 
         :param dataset_path: Путь к датасету
-        :param model_type: Тип модели (yolov8n, yolov8s, yolov11n и т.д.)
+        :param model_type: Тип модели (yolov8n, yolov8s, yolo11n, yolo26n и т.д.)
         :param epochs: Количество эпох
         :param batch_size: Размер батча
         :param image_size: Размер изображения

@@ -964,6 +964,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     "YOLOv11m (средняя)",
                     "YOLOv11l (большая)",
                     "YOLOv11x (максимальная)",
+                    "YOLOv26n (быстрая)",
+                    "YOLOv26s (сбалансированная)",
+                    "YOLOv26m (средняя)",
+                    "YOLOv26l (большая)",
+                    "YOLOv26x (максимальная)",
                 ]
                 self.comboBoxModelType.addItems(models)
             elif "Сегментация" in task_type:
@@ -980,6 +985,11 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
                     "YOLOv11m-seg (средняя)",
                     "YOLOv11l-seg (большая)",
                     "YOLOv11x-seg (максимальная)",
+                    "YOLOv26n-seg (быстрая)",
+                    "YOLOv26s-seg (сбалансированная)",
+                    "YOLOv26m-seg (средняя)",
+                    "YOLOv26l-seg (большая)",
+                    "YOLOv26x-seg (максимальная)",
                 ]
                 self.comboBoxModelType.addItems(models)
         except Exception as e:
@@ -1242,9 +1252,9 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
     def _get_model_type_from_text(self, model_text, task):
         """Преобразует текст модели в тип модели
 
-        ВАЖНО: для линейки YOLO11 официальные имена моделей в ultralytics
-        используют формат без буквы 'v' (например, 'yolo11n.pt'), поэтому
-        здесь мы возвращаем строки без 'v', чтобы загрузка весов проходила
+        ВАЖНО: для линеек YOLO11 и YOLO26 официальные имена моделей в ultralytics
+        используют формат без буквы 'v' (например, 'yolo11n.pt', 'yolo26n.pt'),
+        поэтому здесь мы возвращаем строки без 'v', чтобы загрузка весов проходила
         корректно.
         """
         model_mapping = {
@@ -1254,24 +1264,36 @@ class YoloQgisDialog(QtWidgets.QDialog, FORM_CLASS):
             "YOLOv8m (средняя)": "yolov8m",
             "YOLOv8l (большая)": "yolov8l",
             "YOLOv8x (максимальная)": "yolov8x",
-            # Детекция YOLO11 
+            # Детекция YOLO11
             "YOLOv11n (быстрая)": "yolo11n",
             "YOLOv11s (сбалансированная)": "yolo11s",
             "YOLOv11m (средняя)": "yolo11m",
             "YOLOv11l (большая)": "yolo11l",
             "YOLOv11x (максимальная)": "yolo11x",
+            # Детекция YOLO26
+            "YOLOv26n (быстрая)": "yolo26n",
+            "YOLOv26s (сбалансированная)": "yolo26s",
+            "YOLOv26m (средняя)": "yolo26m",
+            "YOLOv26l (большая)": "yolo26l",
+            "YOLOv26x (максимальная)": "yolo26x",
             # Сегментация YOLOv8
             "YOLOv8n-seg (быстрая)": "yolov8n-seg",
             "YOLOv8s-seg (сбалансированная)": "yolov8s-seg",
             "YOLOv8m-seg (средняя)": "yolov8m-seg",
             "YOLOv8l-seg (большая)": "yolov8l-seg",
             "YOLOv8x-seg (максимальная)": "yolov8x-seg",
-            # Сегментация YOLO11 
+            # Сегментация YOLO11
             "YOLOv11n-seg (быстрая)": "yolo11n-seg",
             "YOLOv11s-seg (сбалансированная)": "yolo11s-seg",
             "YOLOv11m-seg (средняя)": "yolo11m-seg",
             "YOLOv11l-seg (большая)": "yolo11l-seg",
             "YOLOv11x-seg (максимальная)": "yolo11x-seg",
+            # Сегментация YOLO26
+            "YOLOv26n-seg (быстрая)": "yolo26n-seg",
+            "YOLOv26s-seg (сбалансированная)": "yolo26s-seg",
+            "YOLOv26m-seg (средняя)": "yolo26m-seg",
+            "YOLOv26l-seg (большая)": "yolo26l-seg",
+            "YOLOv26x-seg (максимальная)": "yolo26x-seg",
         }
         return model_mapping.get(model_text, "yolov8n")
 

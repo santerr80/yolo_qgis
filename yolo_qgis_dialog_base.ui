@@ -752,6 +752,31 @@
                   <string>YOLOv11x (максимальная)</string>
                  </property>
                 </item>
+                <item>
+                 <property name="text">
+                  <string>YOLOv26n (быстрая)</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>YOLOv26s (сбалансированная)</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>YOLOv26m (средняя)</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>YOLOv26l (большая)</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>YOLOv26x (максимальная)</string>
+                 </property>
+                </item>
                </widget>
               </item>
               <item row="1" column="0">
